@@ -4,8 +4,12 @@ export function createJsonDbClient(options = {}) {
   const baseUrl = options.baseUrl ?? '';
   const batching = normalizeBatching(options.batching);
 
-  const graphqlQueue = createQueue((requests) => graphqlBatch(requests), batching);
-  const restQueue = createQueue((requests) => restBatch(requests), batching);
+  const graphqlQueue = createQueue((requests) => graphqlBatch(requests), batching, {
+    shouldDedupeRequest: isGraphqlDedupeSafe,
+  });
+  const restQueue = createQueue((requests) => restBatch(requests), batching, {
+    shouldDedupeRequest: isRestDedupeSafe,
+  });
 
   async function graphql(query, variables, requestOptions = {}) {
     const request = typeof query === 'string' ? { query, variables } : query;
@@ -74,7 +78,7 @@ function normalizeBatching(value) {
     return {
       enabled: true,
       delayMs: 10,
-      dedupe: true,
+      dedupe: 'reads',
     };
   }
 
@@ -82,15 +86,27 @@ function normalizeBatching(value) {
     return {
       enabled: false,
       delayMs: 10,
-      dedupe: true,
+      dedupe: 'reads',
     };
   }
 
   return {
     enabled: Boolean(value.enabled),
     delayMs: Number(value.delayMs ?? 10),
-    dedupe: value.dedupe !== false,
+    dedupe: normalizeDedupeMode(value.dedupe),
   };
+}
+
+function normalizeDedupeMode(value) {
+  if (value === false) {
+    return false;
+  }
+
+  if (value === 'all') {
+    return 'all';
+  }
+
+  return 'reads';
 }
 
 function shouldBatch(requestOptions, batching) {
@@ -105,7 +121,7 @@ function shouldBatch(requestOptions, batching) {
   return batching.enabled;
 }
 
-function createQueue(flush, batching) {
+function createQueue(flush, batching, options = {}) {
   let pending = [];
   let timer = null;
 
@@ -123,7 +139,7 @@ function createQueue(flush, batching) {
         timer = null;
 
         try {
-          const groups = batching.dedupe ? groupQueuedItems(items) : items.map((queued) => ({
+          const groups = batching.dedupe ? groupQueuedItems(items, (request) => shouldDedupeRequest(request, batching, options)) : items.map((queued) => ({
             request: queued.request,
             queued: [queued],
           }));
@@ -141,23 +157,56 @@ function createQueue(flush, batching) {
   });
 }
 
-function groupQueuedItems(items) {
-  const groups = new Map();
+function shouldDedupeRequest(request, batching, options) {
+  if (batching.dedupe === 'all') {
+    return true;
+  }
+
+  if (batching.dedupe === 'reads') {
+    return options.shouldDedupeRequest?.(request) === true;
+  }
+
+  return false;
+}
+
+function groupQueuedItems(items, canDedupe) {
+  const groups = [];
+  let readSegment = new Map();
 
   for (const item of items) {
-    const key = stableStringify(item.request);
-    const group = groups.get(key);
-    if (group) {
-      group.queued.push(item);
-    } else {
-      groups.set(key, {
+    if (!canDedupe(item.request)) {
+      groups.push({
         request: item.request,
         queued: [item],
       });
+      readSegment = new Map();
+      continue;
+    }
+
+    const key = stableStringify(item.request);
+    const group = readSegment.get(key);
+    if (group) {
+      group.queued.push(item);
+    } else {
+      const nextGroup = {
+        request: item.request,
+        queued: [item],
+      };
+      readSegment.set(key, nextGroup);
+      groups.push(nextGroup);
     }
   }
 
-  return [...groups.values()];
+  return groups;
+}
+
+function isGraphqlDedupeSafe(request) {
+  const query = String(request.query ?? '').trimStart();
+  return !/^(mutation|subscription)\b/.test(query);
+}
+
+function isRestDedupeSafe(request) {
+  return String(request.method ?? 'GET').toUpperCase() === 'GET';
 }
 
 async function postJson(url, body) {

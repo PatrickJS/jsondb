@@ -252,6 +252,134 @@ test('schema seed records are validated without a separate data file', async () 
   );
 });
 
+test('schema validation rejects declared field type mismatches', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": { "type": "string", "required": true },
+      "role": { "type": "enum", "values": ["admin", "user"] },
+      "profile": {
+        "type": "object",
+        "fields": {
+          "age": { "type": "number" },
+          "flags": {
+            "type": "array",
+            "items": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "seed": [
+      {
+        "id": 1,
+        "email": 42,
+        "role": "owner",
+        "profile": {
+          "age": "old",
+          "flags": ["yes"]
+        }
+      }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+
+  assert.deepEqual(
+    project.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').map((diagnostic) => diagnostic.code),
+    [
+      'SCHEMA_FIELD_TYPE_MISMATCH',
+      'SCHEMA_FIELD_TYPE_MISMATCH',
+      'SCHEMA_ENUM_VALUE_INVALID',
+      'SCHEMA_FIELD_TYPE_MISMATCH',
+      'SCHEMA_FIELD_TYPE_MISMATCH',
+    ],
+  );
+  assert.match(project.diagnostics.map((diagnostic) => diagnostic.message).join('\n'), /profile\.flags\[0\]/);
+  await assert.rejects(() => syncJsonFixtureDb(config), /expected string/);
+});
+
+test('package API rejects records that do not match schema field types', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": { "type": "string", "required": true },
+      "role": { "type": "enum", "values": ["admin", "user"] }
+    },
+    "seed": []
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+
+  await assert.rejects(
+    () => db.collection('users').create({
+      id: 'u_1',
+      email: 42,
+      role: 'owner',
+    }),
+    (error) => {
+      assert.equal(error.code, 'DB_SCHEMA_VALIDATION_FAILED');
+      assert.match(error.message, /email/);
+      assert.equal(error.details.diagnostics[0].code, 'SCHEMA_FIELD_TYPE_MISMATCH');
+      return true;
+    },
+  );
+});
+
+test('package API serializes concurrent collection writes in one process', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": []
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  await Promise.all(Array.from({ length: 12 }, (_, index) => db.collection('users').create({
+    id: `u_${index}`,
+    name: `User ${index}`,
+  })));
+
+  assert.equal((await db.collection('users').all()).length, 12);
+});
+
+test('package API serializes concurrent document writes in one process', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'settings.schema.jsonc', `{
+    "kind": "document",
+    "fields": {
+      "theme": { "type": "string" },
+      "locale": { "type": "string" },
+      "active": { "type": "boolean" }
+    },
+    "seed": {
+      "theme": "light"
+    }
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  await Promise.all([
+    db.document('settings').update({ locale: 'en-US' }),
+    db.document('settings').update({ active: true }),
+  ]);
+
+  assert.deepEqual(await db.document('settings').all(), {
+    theme: 'light',
+    locale: 'en-US',
+    active: true,
+  });
+});
+
 test('singleton documents support JSON pointer get and set', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'settings.json', JSON.stringify({

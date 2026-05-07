@@ -570,6 +570,7 @@ export default {
   server: {
     host: '127.0.0.1',
     port: 7331,
+    maxBodyBytes: 1048576,
   },
 
   rest: {
@@ -647,6 +648,10 @@ POST /__jsondb/batch
   }
 ]
 ```
+
+REST batches are non-transactional by design. Items execute in order, and earlier successful writes remain committed if a later item fails.
+
+Schema-backed writes should validate declared field types before mutating runtime state. Required fields, primitive types, enum values, arrays, and nested objects should be checked for package API writes, REST writes, GraphQL mutations, `jsondb sync`, and `jsondb schema validate`.
 
 The local server should also expose a built-in dependency-free viewer:
 
@@ -761,7 +766,8 @@ client.rest(method, path, body)
 client.rest.batch(requests)
 optional automatic batching for individual GraphQL and REST calls
 10ms default automatic batching window
-dedupe for identical automatic batch requests
+read-safe dedupe for identical REST GET and GraphQL query requests
+explicit dedupe: 'all' opt-in for deduping writes and mutations
 ```
 
 Local mock behavior should support latency and chaos errors:

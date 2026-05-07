@@ -106,6 +106,61 @@ test('client automatic batching dedupes identical GraphQL requests', async () =>
   ]);
 });
 
+test('client automatic batching does not dedupe GraphQL mutations by default', async () => {
+  const calls = withMockFetch([
+    [
+      { data: { createUser: { id: 'u_1' } } },
+      { data: { createUser: { id: 'u_1' } } },
+    ],
+  ]);
+
+  const client = createJsonDbClient({
+    baseUrl: 'http://jsondb.local',
+    batching: true,
+  });
+
+  const mutation = 'mutation { createUser(input: { id: "u_1" }) { id } }';
+  const [first, second] = await Promise.all([
+    client.graphql(mutation),
+    client.graphql(mutation),
+  ]);
+
+  assert.deepEqual(first, { data: { createUser: { id: 'u_1' } } });
+  assert.deepEqual(second, { data: { createUser: { id: 'u_1' } } });
+  assert.deepEqual(JSON.parse(calls[0].init.body), [
+    { query: mutation },
+    { query: mutation },
+  ]);
+});
+
+test('client automatic batching can explicitly dedupe all GraphQL requests', async () => {
+  const calls = withMockFetch([
+    [
+      { data: { createUser: { id: 'u_1' } } },
+    ],
+  ]);
+
+  const client = createJsonDbClient({
+    baseUrl: 'http://jsondb.local',
+    batching: {
+      enabled: true,
+      dedupe: 'all',
+    },
+  });
+
+  const mutation = 'mutation { createUser(input: { id: "u_1" }) { id } }';
+  const [first, second] = await Promise.all([
+    client.graphql(mutation),
+    client.graphql(mutation),
+  ]);
+
+  assert.deepEqual(first, { data: { createUser: { id: 'u_1' } } });
+  assert.deepEqual(second, { data: { createUser: { id: 'u_1' } } });
+  assert.deepEqual(JSON.parse(calls[0].init.body), [
+    { query: mutation },
+  ]);
+});
+
 test('client can batch REST requests', async () => {
   const calls = withMockFetch([
     [
@@ -141,6 +196,50 @@ test('client can batch REST requests', async () => {
     },
   ]);
   assert.equal(calls[0].url, 'http://jsondb.local/__jsondb/batch');
+});
+
+test('client automatic batching dedupes REST GET requests but not writes by default', async () => {
+  const calls = withMockFetch([
+    [
+      {
+        status: 200,
+        headers: {},
+        body: [{ id: 'u_1' }],
+      },
+      {
+        status: 201,
+        headers: {},
+        body: { id: 'u_2' },
+      },
+      {
+        status: 201,
+        headers: {},
+        body: { id: 'u_2' },
+      },
+    ],
+  ]);
+
+  const client = createJsonDbClient({
+    baseUrl: 'http://jsondb.local',
+    batching: true,
+  });
+
+  const [firstRead, secondRead, firstWrite, secondWrite] = await Promise.all([
+    client.rest.get('/users'),
+    client.rest.get('/users'),
+    client.rest.post('/users', { id: 'u_2' }),
+    client.rest.post('/users', { id: 'u_2' }),
+  ]);
+
+  assert.deepEqual(firstRead.body, [{ id: 'u_1' }]);
+  assert.deepEqual(secondRead.body, [{ id: 'u_1' }]);
+  assert.equal(firstWrite.status, 201);
+  assert.equal(secondWrite.status, 201);
+  assert.deepEqual(JSON.parse(calls[0].init.body), [
+    { method: 'GET', path: '/users' },
+    { method: 'POST', path: '/users', body: { id: 'u_2' } },
+    { method: 'POST', path: '/users', body: { id: 'u_2' } },
+  ]);
 });
 
 test('client HTTP errors explain the failing URL and response body', async () => {

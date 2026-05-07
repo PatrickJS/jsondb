@@ -119,6 +119,38 @@ test('REST handler creates collection records and applies defaults', async () =>
   });
 });
 
+test('REST handler rejects writes that do not match schema field types', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": { "type": "string", "required": true },
+      "role": { "type": "enum", "values": ["admin", "user"] }
+    },
+    "seed": []
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('POST', {
+      id: 'u_1',
+      email: 42,
+      role: 'owner',
+    }),
+    response,
+    new URL('http://jsondb.local/users'),
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(response.json().error.code, 'DB_SCHEMA_VALIDATION_FAILED');
+  assert.match(response.json().error.details.diagnostics[0].message, /email/);
+});
+
 test('REST handler updates singleton documents', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'settings.json', JSON.stringify({
@@ -143,6 +175,61 @@ test('REST handler updates singleton documents', async () => {
     theme: 'dark',
     locale: 'en-US',
   });
+});
+
+test('REST batch is sequential and keeps earlier successful writes when a later item fails', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": { "type": "string", "required": true },
+      "role": { "type": "enum", "values": ["admin", "user"] }
+    },
+    "seed": []
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('POST', [
+      {
+        method: 'POST',
+        path: '/users',
+        body: {
+          id: 'u_1',
+          email: 'ada@example.com',
+          role: 'admin',
+        },
+      },
+      {
+        method: 'POST',
+        path: '/users',
+        body: {
+          id: 'u_2',
+          email: 'grace@example.com',
+          role: 'owner',
+        },
+      },
+    ]),
+    response,
+    new URL('http://jsondb.local/__jsondb/batch'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json()[0].status, 201);
+  assert.equal(response.json()[1].status, 400);
+  assert.equal(response.json()[1].body.error.code, 'DB_SCHEMA_VALIDATION_FAILED');
+  assert.deepEqual(await db.collection('users').all(), [
+    {
+      id: 'u_1',
+      email: 'ada@example.com',
+      role: 'admin',
+    },
+  ]);
 });
 
 test('REST handler supports batched requests', async () => {
@@ -238,6 +325,33 @@ test('REST batch errors include code hint and item index', async () => {
   assert.equal(response.json()[0].status, 400);
   assert.equal(response.json()[0].body.error.code, 'REST_BATCH_INVALID_PATH');
   assert.match(response.json()[0].body.error.hint, /absolute local paths/);
+});
+
+test('REST handler returns 413 for oversized JSON bodies', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([]));
+
+  const db = await openJsonFixtureDb({
+    cwd,
+    server: {
+      maxBodyBytes: 12,
+    },
+  });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('POST', {
+      id: 'u_1',
+      name: 'payload is too large',
+    }),
+    response,
+    new URL('http://jsondb.local/users'),
+  );
+
+  assert.equal(response.status, 413);
+  assert.equal(response.json().error.code, 'JSON_BODY_TOO_LARGE');
+  assert.match(response.json().error.hint, /server\.maxBodyBytes/);
 });
 
 function makeRequest(method, body) {

@@ -3,6 +3,14 @@ import { makeGeneratedSchema } from '../schema.js';
 import { renderJsonDbViewer } from '../web/viewer.js';
 
 export async function handleRestRequest(db, request, response, url = new URL(request.url, 'http://jsondb.local')) {
+  try {
+    await handleRestRequestUnsafe(db, request, response, url);
+  } catch (error) {
+    sendJson(response, error.status ?? 500, serializeError(error, 'REST_ERROR'));
+  }
+}
+
+async function handleRestRequestUnsafe(db, request, response, url) {
   if (request.method === 'GET' && url.pathname === '/__jsondb') {
     sendText(response, 200, renderJsonDbViewer({
       graphqlPath: db.config.graphql?.path ?? '/graphql',
@@ -11,7 +19,9 @@ export async function handleRestRequest(db, request, response, url = new URL(req
   }
 
   if (request.method === 'POST' && url.pathname === '/__jsondb/batch') {
-    const result = await tryRest(async () => executeRestBatch(db, await readJsonBody(request)));
+    const result = await tryRest(async () => executeRestBatch(db, await readJsonBody(request, {
+      maxBytes: maxBodyBytes(db),
+    })));
     sendJson(response, result.status, result.body);
     return;
   }
@@ -97,9 +107,26 @@ export async function executeRestBatch(db, body) {
   return results;
 }
 
-export async function readJsonBody(request) {
+export async function readJsonBody(request, options = {}) {
   const chunks = [];
+  const maxBytes = Number(options.maxBytes ?? Infinity);
+  let byteLength = 0;
+
   for await (const chunk of request) {
+    byteLength += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
+    if (byteLength > maxBytes) {
+      throw jsonDbError(
+        'JSON_BODY_TOO_LARGE',
+        `Request body is too large. Received more than ${maxBytes} bytes.`,
+        {
+          status: 413,
+          hint: 'Send a smaller JSON payload or increase server.maxBodyBytes in jsondb.config.mjs for local development.',
+          details: {
+            maxBodyBytes: maxBytes,
+          },
+        },
+      );
+    }
     chunks.push(chunk);
   }
 
@@ -119,6 +146,10 @@ export async function readJsonBody(request) {
       },
     );
   }
+}
+
+function maxBodyBytes(db) {
+  return Number(db.config.server?.maxBodyBytes ?? 1048576);
 }
 
 export function sendJson(response, status, body) {
@@ -264,12 +295,16 @@ async function handleCollection(db, resource, id, request, response) {
   }
 
   if (request.method === 'POST' && !id) {
-    sendJson(response, 201, await collection.create(await readJsonBody(request)));
+    sendJson(response, 201, await collection.create(await readJsonBody(request, {
+      maxBytes: maxBodyBytes(db),
+    })));
     return;
   }
 
   if (request.method === 'PATCH' && id) {
-    const record = await collection.patch(id, await readJsonBody(request));
+    const record = await collection.patch(id, await readJsonBody(request, {
+      maxBytes: maxBodyBytes(db),
+    }));
     sendJson(response, record ? 200 : 404, record ?? { error: 'Not found' });
     return;
   }
@@ -294,12 +329,16 @@ async function handleDocument(db, resource, request, response) {
   }
 
   if (request.method === 'PUT') {
-    sendJson(response, 200, await document.put(await readJsonBody(request)));
+    sendJson(response, 200, await document.put(await readJsonBody(request, {
+      maxBytes: maxBodyBytes(db),
+    })));
     return;
   }
 
   if (request.method === 'PATCH') {
-    sendJson(response, 200, await document.update(await readJsonBody(request)));
+    sendJson(response, 200, await document.update(await readJsonBody(request, {
+      maxBytes: maxBodyBytes(db),
+    })));
     return;
   }
 

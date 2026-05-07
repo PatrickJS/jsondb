@@ -31,6 +31,7 @@ export const DEFAULT_CONFIG = {
   server: {
     host: '127.0.0.1',
     port: 7331,
+    maxBodyBytes: 1048576,
   },
   rest: {
     enabled: true,

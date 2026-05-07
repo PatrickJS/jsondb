@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { loadConfig } from './config.js';
 import { jsonDbError, listChoices } from './errors.js';
+import { assertRecordMatchesResource } from './schema.js';
 import { loadProjectSchema } from './schema.js';
 import { syncJsonFixtureDb, applyDefaultsToRecord } from './sync.js';
-import { readJsonState, statePathForResource, writeJsonState } from './state.js';
+import { readJsonState, statePathForResource, withJsonStateWrite, writeJsonState } from './state.js';
 
 export async function openJsonFixtureDb(options = {}) {
   const config = await loadConfig(options);
@@ -91,65 +92,76 @@ export class JsonDbCollection {
   }
 
   async create(record) {
-    const records = await this.all();
-    const nextRecord = this.config.defaults?.applyOnCreate === false
-      ? { ...record }
-      : applyDefaultsToRecord(record, this.resource);
-    const id = nextRecord[this.resource.idField];
+    return withJsonStateWrite(this.path, async () => {
+      const records = await this.all();
+      const nextRecord = this.config.defaults?.applyOnCreate === false
+        ? { ...record }
+        : applyDefaultsToRecord(record, this.resource);
+      const id = nextRecord[this.resource.idField];
 
-    if (id === undefined || id === null || id === '') {
-      throw jsonDbError(
-        'DB_CREATE_MISSING_ID',
-        `Cannot create "${this.resource.name}" record because id field "${this.resource.idField}" is missing.`,
-        {
-          status: 400,
-          hint: `Include "${this.resource.idField}" in the record body, or configure collections.${this.resource.name}.idField if this collection uses a different id field.`,
-          details: {
-            resource: this.resource.name,
-            idField: this.resource.idField,
+      if (id === undefined || id === null || id === '') {
+        throw jsonDbError(
+          'DB_CREATE_MISSING_ID',
+          `Cannot create "${this.resource.name}" record because id field "${this.resource.idField}" is missing.`,
+          {
+            status: 400,
+            hint: `Include "${this.resource.idField}" in the record body, or configure collections.${this.resource.name}.idField if this collection uses a different id field.`,
+            details: {
+              resource: this.resource.name,
+              idField: this.resource.idField,
+            },
           },
-        },
-      );
-    }
+        );
+      }
 
-    if (records.some((existing) => existing?.[this.resource.idField] === id)) {
-      throw jsonDbError(
-        'DB_CREATE_DUPLICATE_ID',
-        `Cannot create "${this.resource.name}" record because id "${id}" already exists.`,
-        {
-          status: 409,
-          hint: 'Use a unique id, or call patch/update if you intended to modify the existing record.',
-          details: {
-            resource: this.resource.name,
-            idField: this.resource.idField,
-            id,
+      assertRecordMatchesResource(nextRecord, this.resource, this.config, {
+        source: `${this.resource.name} create body`,
+      });
+
+      if (records.some((existing) => existing?.[this.resource.idField] === id)) {
+        throw jsonDbError(
+          'DB_CREATE_DUPLICATE_ID',
+          `Cannot create "${this.resource.name}" record because id "${id}" already exists.`,
+          {
+            status: 409,
+            hint: 'Use a unique id, or call patch/update if you intended to modify the existing record.',
+            details: {
+              resource: this.resource.name,
+              idField: this.resource.idField,
+              id,
+            },
           },
-        },
-      );
-    }
+        );
+      }
 
-    records.push(nextRecord);
-    await writeJsonState(this.path, records);
-    return nextRecord;
+      records.push(nextRecord);
+      await writeJsonState(this.path, records);
+      return nextRecord;
+    });
   }
 
   async update(id, patch) {
-    const records = await this.all();
-    const index = records.findIndex((record) => record?.[this.resource.idField] === id);
-    if (index === -1) {
-      return null;
-    }
+    return withJsonStateWrite(this.path, async () => {
+      const records = await this.all();
+      const index = records.findIndex((record) => record?.[this.resource.idField] === id);
+      if (index === -1) {
+        return null;
+      }
 
-    const nextRecord = {
-      ...records[index],
-      ...patch,
-      [this.resource.idField]: id,
-    };
-    records[index] = this.config.defaults?.applyOnCreate === false
-      ? nextRecord
-      : applyDefaultsToRecord(nextRecord, this.resource);
-    await writeJsonState(this.path, records);
-    return records[index];
+      const nextRecord = {
+        ...records[index],
+        ...patch,
+        [this.resource.idField]: id,
+      };
+      records[index] = this.config.defaults?.applyOnCreate === false
+        ? nextRecord
+        : applyDefaultsToRecord(nextRecord, this.resource);
+      assertRecordMatchesResource(records[index], this.resource, this.config, {
+        source: `${this.resource.name} patch body`,
+      });
+      await writeJsonState(this.path, records);
+      return records[index];
+    });
   }
 
   async patch(id, patch) {
@@ -157,10 +169,12 @@ export class JsonDbCollection {
   }
 
   async delete(id) {
-    const records = await this.all();
-    const nextRecords = records.filter((record) => record?.[this.resource.idField] !== id);
-    await writeJsonState(this.path, nextRecords);
-    return nextRecords.length !== records.length;
+    return withJsonStateWrite(this.path, async () => {
+      const records = await this.all();
+      const nextRecords = records.filter((record) => record?.[this.resource.idField] !== id);
+      await writeJsonState(this.path, nextRecords);
+      return nextRecords.length !== records.length;
+    });
   }
 }
 
@@ -181,25 +195,40 @@ export class JsonDbDocument {
   }
 
   async put(value) {
-    await writeJsonState(this.path, value);
-    return value;
+    return withJsonStateWrite(this.path, async () => {
+      assertRecordMatchesResource(value, this.resource, this.config, {
+        source: `${this.resource.name} document body`,
+      });
+      await writeJsonState(this.path, value);
+      return value;
+    });
   }
 
   async set(pointer, value) {
-    const document = await this.all();
-    setPointer(document, pointer, value);
-    await writeJsonState(this.path, document);
-    return value;
+    return withJsonStateWrite(this.path, async () => {
+      const document = await this.all();
+      setPointer(document, pointer, value);
+      assertRecordMatchesResource(document, this.resource, this.config, {
+        source: `${this.resource.name} document body`,
+      });
+      await writeJsonState(this.path, document);
+      return value;
+    });
   }
 
   async update(patch) {
-    const document = await this.all();
-    const nextDocument = {
-      ...document,
-      ...patch,
-    };
-    await writeJsonState(this.path, nextDocument);
-    return nextDocument;
+    return withJsonStateWrite(this.path, async () => {
+      const document = await this.all();
+      const nextDocument = {
+        ...document,
+        ...patch,
+      };
+      assertRecordMatchesResource(nextDocument, this.resource, this.config, {
+        source: `${this.resource.name} document patch body`,
+      });
+      await writeJsonState(this.path, nextDocument);
+      return nextDocument;
+    });
   }
 }
 

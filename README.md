@@ -67,6 +67,8 @@ export default collection({
 });
 ```
 
+Schema-backed fixtures are validated against declared field types. Required fields, primitive types, enum values, arrays, and nested objects are checked during `sync` and during package, REST, and GraphQL writes.
+
 ## CLI
 
 ```bash
@@ -175,7 +177,7 @@ GraphQL batching is supported by posting an array to `/graphql`:
 ]
 ```
 
-The client can also batch requests made within a short timeout. The default batching window is `10ms`, and identical requests in the same window are deduped by default:
+The client can also batch requests made within a short timeout. The default batching window is `10ms`. Identical REST `GET` and GraphQL `query` requests are deduped by default, while writes and GraphQL mutations are not deduped unless you explicitly choose `dedupe: 'all'`:
 
 ```ts
 const client = createJsonDbClient({
@@ -210,6 +212,8 @@ POST /__jsondb/batch
   }
 ]
 ```
+
+REST batches execute sequentially and are intentionally non-transactional. If an earlier write succeeds and a later batch item fails, the earlier write stays committed.
 
 REST examples:
 
@@ -252,6 +256,16 @@ export default {
       status: 503,
       message: 'Random local mock failure',
     },
+  },
+};
+```
+
+The local server rejects oversized JSON bodies before buffering too much data. The default limit is `1048576` bytes and can be changed for local development:
+
+```js
+export default {
+  server: {
+    maxBodyBytes: 1048576,
   },
 };
 ```
@@ -349,7 +363,7 @@ const client = createJsonDbClient({
   batching: {
     enabled: true,
     delayMs: 10,
-    dedupe: true,
+    dedupe: 'reads',
   },
 });
 

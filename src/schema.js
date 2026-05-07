@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { jsonDbError } from './errors.js';
 import { readText } from './fs-utils.js';
 import { parseJsonc } from './jsonc.js';
 import { routePathForResource, typeNameForResource } from './names.js';
@@ -189,14 +190,38 @@ export function inferFieldFromValue(value, fieldName, options = {}) {
   return { type: 'unknown', required };
 }
 
-export function validateRecordAgainstResource(record, resource, config) {
+export function assertRecordMatchesResource(record, resource, config, options = {}) {
+  const diagnostics = validateRecordAgainstResource(record, resource, config, options)
+    .filter((diagnostic) => diagnostic.severity === 'error');
+
+  if (diagnostics.length === 0) {
+    return;
+  }
+
+  throw jsonDbError(
+    'DB_SCHEMA_VALIDATION_FAILED',
+    `${resource.name} record does not match its schema: ${diagnostics[0].message}`,
+    {
+      status: 400,
+      hint: 'Update the record to match the schema field types, required fields, and enum values.',
+      details: {
+        resource: resource.name,
+        diagnostics,
+      },
+    },
+  );
+}
+
+export function validateRecordAgainstResource(record, resource, config, options = {}) {
   const diagnostics = [];
+  const source = options.source ?? `${resource.name} record`;
 
   if (!record || typeof record !== 'object' || Array.isArray(record)) {
     diagnostics.push({
+      code: 'SCHEMA_RECORD_INVALID',
       severity: 'error',
       resource: resource.name,
-      message: `${resource.name} seed contains a non-object record`,
+      message: `${source} must be an object`,
     });
     return diagnostics;
   }
@@ -210,6 +235,7 @@ export function validateRecordAgainstResource(record, resource, config) {
     }
 
     diagnostics.push({
+      code: 'SCHEMA_UNKNOWN_FIELD',
       severity: setting === 'error' ? 'error' : 'warn',
       resource: resource.name,
       field: fieldName,
@@ -220,15 +246,179 @@ export function validateRecordAgainstResource(record, resource, config) {
   for (const [fieldName, field] of Object.entries(fields)) {
     if (field.required && (record[fieldName] === undefined || record[fieldName] === null)) {
       diagnostics.push({
+        code: 'SCHEMA_REQUIRED_FIELD_MISSING',
         severity: 'error',
         resource: resource.name,
         field: fieldName,
         message: `${resource.name} record is missing required field "${fieldName}"`,
       });
+      continue;
+    }
+
+    if (record[fieldName] !== undefined) {
+      diagnostics.push(...validateValueAgainstField(record[fieldName], field, {
+        config,
+        fieldPath: fieldName,
+        resource,
+      }));
     }
   }
 
   return diagnostics;
+}
+
+export function validateValueAgainstField(value, field, context) {
+  const diagnostics = [];
+  const expected = describeExpectedField(field);
+
+  if (value === undefined) {
+    return diagnostics;
+  }
+
+  if (value === null && field.type !== 'unknown') {
+    return [
+      typeMismatch(context, expected, value),
+    ];
+  }
+
+  switch (field.type) {
+    case 'unknown':
+      return diagnostics;
+    case 'string':
+      return typeof value === 'string' ? diagnostics : [typeMismatch(context, expected, value)];
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value) ? diagnostics : [typeMismatch(context, expected, value)];
+    case 'boolean':
+      return typeof value === 'boolean' ? diagnostics : [typeMismatch(context, expected, value)];
+    case 'enum':
+      return (field.values ?? []).includes(value)
+        ? diagnostics
+        : [
+          {
+            code: 'SCHEMA_ENUM_VALUE_INVALID',
+            severity: 'error',
+            resource: context.resource.name,
+            field: context.fieldPath,
+            message: `${context.resource.name} field "${context.fieldPath}" expected ${expected} but received ${JSON.stringify(value)}`,
+            details: {
+              expected,
+              received: value,
+              values: field.values ?? [],
+            },
+          },
+        ];
+    case 'array':
+      if (!Array.isArray(value)) {
+        return [typeMismatch(context, expected, value)];
+      }
+      for (const [index, item] of value.entries()) {
+        diagnostics.push(...validateValueAgainstField(item, field.items ?? { type: 'unknown' }, {
+          ...context,
+          fieldPath: `${context.fieldPath}[${index}]`,
+        }));
+      }
+      return diagnostics;
+    case 'object':
+      if (!isPlainRecord(value)) {
+        return [typeMismatch(context, expected, value)];
+      }
+      return validateObjectFields(value, field, context);
+    default:
+      return diagnostics;
+  }
+}
+
+function validateObjectFields(value, field, context) {
+  const diagnostics = [];
+  const fields = field.fields ?? {};
+
+  for (const childName of Object.keys(value)) {
+    if (childName in fields) {
+      continue;
+    }
+
+    const setting = context.config.schema?.unknownFields ?? 'warn';
+    if (setting === 'allow') {
+      continue;
+    }
+
+    const fieldPath = `${context.fieldPath}.${childName}`;
+    diagnostics.push({
+      code: 'SCHEMA_UNKNOWN_FIELD',
+      severity: setting === 'error' ? 'error' : 'warn',
+      resource: context.resource.name,
+      field: fieldPath,
+      message: `${context.resource.name} field "${fieldPath}" is not defined in the schema`,
+    });
+  }
+
+  for (const [childName, childField] of Object.entries(fields)) {
+    const fieldPath = `${context.fieldPath}.${childName}`;
+    const childValue = value[childName];
+
+    if (childField.required && (childValue === undefined || childValue === null)) {
+      diagnostics.push({
+        code: 'SCHEMA_REQUIRED_FIELD_MISSING',
+        severity: 'error',
+        resource: context.resource.name,
+        field: fieldPath,
+        message: `${context.resource.name} record is missing required field "${fieldPath}"`,
+      });
+      continue;
+    }
+
+    diagnostics.push(...validateValueAgainstField(childValue, childField, {
+      ...context,
+      fieldPath,
+    }));
+  }
+
+  return diagnostics;
+}
+
+function typeMismatch(context, expected, value) {
+  return {
+    code: 'SCHEMA_FIELD_TYPE_MISMATCH',
+    severity: 'error',
+    resource: context.resource.name,
+    field: context.fieldPath,
+    message: `${context.resource.name} field "${context.fieldPath}" expected ${expected} but received ${describeJsonValue(value)}`,
+    details: {
+      expected,
+      receivedType: describeJsonValue(value),
+    },
+  };
+}
+
+function describeExpectedField(field) {
+  switch (field.type) {
+    case 'enum':
+      return `one of ${field.values?.map((value) => JSON.stringify(value)).join(', ') || '[]'}`;
+    case 'array':
+      return `array of ${describeExpectedField(field.items ?? { type: 'unknown' })}`;
+    case 'object':
+      return 'object';
+    case 'unknown':
+      return 'any JSON value';
+    default:
+      return field.type ?? 'unknown';
+  }
+}
+
+function describeJsonValue(value) {
+  if (value === null) {
+    return 'null';
+  }
+
+  if (Array.isArray(value)) {
+    return 'array';
+  }
+
+  return typeof value;
+}
+
+function isPlainRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function buildResource({ name, dataPath, schemaPath, rawData, rawSchema, config }) {
@@ -349,15 +539,15 @@ function emptySeedForKind(kind) {
 }
 
 function validateResourceSeed(resource, config) {
-  if (!resource.schemaPath) {
-    return [];
-  }
-
   if (resource.kind === 'collection') {
-    return resource.seed.flatMap((record) => validateRecordAgainstResource(record, resource, config));
+    return resource.seed.flatMap((record, index) => validateRecordAgainstResource(record, resource, config, {
+      source: `${resource.name} seed record ${index}`,
+    }));
   }
 
-  return validateRecordAgainstResource(resource.seed, resource, config);
+  return validateRecordAgainstResource(resource.seed, resource, config, {
+    source: `${resource.name} seed document`,
+  });
 }
 
 function mergeInferredFields(fields, required) {

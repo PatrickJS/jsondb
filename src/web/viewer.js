@@ -1,5 +1,31 @@
 export function renderJsonDbViewer(options = {}) {
   const graphqlPath = options.graphqlPath ?? '/graphql';
+  const buttonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:translate-y-px';
+  const primaryButtonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:translate-y-px';
+  const tabClass = 'inline-flex min-h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const activeTabClass = 'inline-flex min-h-10 items-center justify-center rounded-md border border-emerald-700 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const resourceButtonClass = 'inline-grid w-full gap-1 rounded-md border border-slate-300 bg-white px-3 py-3 text-left shadow-sm transition hover:border-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const activeResourceButtonClass = 'inline-grid w-full gap-1 rounded-md border border-emerald-700 bg-emerald-50 px-3 py-3 text-left shadow-sm ring-1 ring-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const panelClass = 'min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm';
+  const panelHeadClass = 'flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3';
+  const panelBodyClass = 'p-4';
+  const stackClass = 'grid gap-3';
+  const rowClass = 'flex flex-wrap items-center gap-2';
+  const mutedClass = 'text-sm text-slate-500';
+  const codeClass = 'min-h-12 overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100';
+  const textareaClass = 'min-h-40 w-full resize-y rounded-md border border-slate-300 bg-white p-3 font-mono text-sm text-slate-950 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const inputClass = 'min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const selectClass = 'min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const viewerGridClass = 'grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]';
+  const tableWrapClass = 'overflow-auto rounded-md border border-slate-200';
+  const tableClass = 'w-full min-w-[480px] border-collapse bg-white';
+  const thClass = 'sticky top-0 border-b border-slate-200 bg-slate-100 px-3 py-2 text-left text-xs font-semibold text-slate-600';
+  const tdClass = 'max-w-[360px] border-b border-slate-200 px-3 py-2 align-top font-mono text-xs text-slate-800 break-words';
+  const exampleClass = 'grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm';
+  const exampleHeadClass = 'flex flex-wrap items-center justify-between gap-2';
+  const pillClass = 'inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600';
+  const warningPillClass = 'inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700';
+  const errorPillClass = 'inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700';
 
   return `<!doctype html>
 <html lang="en">
@@ -9,534 +35,134 @@ export function renderJsonDbViewer(options = {}) {
   <title>jsondb viewer</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f7f8fb;
-      --panel: #ffffff;
-      --panel-soft: #f0f4f8;
-      --text: #17202a;
-      --muted: #627386;
-      --line: #d8e0e8;
-      --accent: #1f7a68;
-      --accent-dark: #15594d;
-      --warn: #9a5b00;
-      --danger: #b3261e;
-      --code: #101923;
-      --code-text: #e7eef7;
-      --focus: #2f80ed;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    button,
-    input,
-    select,
-    textarea {
-      font: inherit;
-    }
-
-    button,
-    select {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: var(--panel);
-      color: var(--text);
-      min-height: 34px;
-      padding: 6px 10px;
-    }
-
-    button {
-      cursor: pointer;
-    }
-
-    button.primary {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
-    }
-
-    button:hover {
-      border-color: var(--accent);
-    }
-
-    button.primary:hover {
-      background: var(--accent-dark);
-    }
-
-    button:focus-visible,
-    select:focus-visible,
-    textarea:focus-visible,
-    input:focus-visible {
-      outline: 2px solid var(--focus);
-      outline-offset: 2px;
-    }
-
-    textarea,
-    pre {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    }
-
-    textarea {
-      width: 100%;
-      min-height: 160px;
-      resize: vertical;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 10px;
-      background: #fff;
-      color: var(--text);
-    }
-
-    pre {
-      margin: 0;
-      overflow: auto;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-
-    .app {
-      min-height: 100vh;
-      display: grid;
-      grid-template-rows: auto 1fr;
-    }
-
-    header {
-      border-bottom: 1px solid var(--line);
-      background: var(--panel);
-      padding: 14px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-
-    h1,
-    h2,
-    h3 {
-      margin: 0;
-      line-height: 1.2;
-      letter-spacing: 0;
-    }
-
-    h1 {
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    h2 {
-      font-size: 16px;
-      font-weight: 700;
-    }
-
-    h3 {
-      font-size: 13px;
-      font-weight: 700;
-    }
-
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .pill {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--panel-soft);
-      color: var(--muted);
-      padding: 4px 8px;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-      min-height: 0;
-    }
-
-    aside {
-      border-right: 1px solid var(--line);
-      background: #fbfcfe;
-      padding: 14px;
-      overflow: auto;
-    }
-
-    main {
-      min-width: 0;
-      padding: 18px;
-      overflow: auto;
-    }
-
-    .resource-list {
-      display: grid;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .resource-button {
-      width: 100%;
-      text-align: left;
-      display: grid;
-      gap: 2px;
-      padding: 10px;
-      min-height: 58px;
-    }
-
-    .resource-button.active {
-      border-color: var(--accent);
-      box-shadow: inset 3px 0 0 var(--accent);
-    }
-
-    .resource-name {
-      font-weight: 700;
-    }
-
-    .resource-meta {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 14px;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .tab {
-      background: transparent;
-    }
-
-    .tab.active {
-      border-color: var(--accent);
-      background: #e7f3ef;
-      color: var(--accent-dark);
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
-      gap: 14px;
-      align-items: start;
-    }
-
-    .panel {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      min-width: 0;
-    }
-
-    .panel-head {
-      border-bottom: 1px solid var(--line);
-      padding: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .panel-body {
-      padding: 12px;
-    }
-
-    .stack {
-      display: grid;
-      gap: 12px;
-    }
-
-    .row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .muted {
-      color: var(--muted);
-    }
-
-    .warning {
-      color: var(--warn);
-    }
-
-    .error {
-      color: var(--danger);
-    }
-
-    .code {
-      background: var(--code);
-      color: var(--code-text);
-      border-radius: 6px;
-      padding: 12px;
-      min-height: 48px;
-    }
-
-    .table-wrap {
-      overflow: auto;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-    }
-
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      min-width: 480px;
-      background: #fff;
-    }
-
-    th,
-    td {
-      border-bottom: 1px solid var(--line);
-      padding: 8px 10px;
-      text-align: left;
-      vertical-align: top;
-      max-width: 360px;
-    }
-
-    th {
-      position: sticky;
-      top: 0;
-      background: var(--panel-soft);
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    td {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
-      overflow-wrap: anywhere;
-    }
-
-    .example {
-      display: grid;
-      gap: 8px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px;
-      background: #fff;
-    }
-
-    .example-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .method {
-      border-radius: 4px;
-      padding: 2px 6px;
-      color: #fff;
-      background: #546a7b;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .method.get {
-      background: #1f6feb;
-    }
-
-    .method.post {
-      background: #1f7a68;
-    }
-
-    .method.patch,
-    .method.put {
-      background: #9a5b00;
-    }
-
-    .method.delete {
-      background: #b3261e;
-    }
-
-    .runner-grid {
-      display: grid;
-      grid-template-columns: auto minmax(180px, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .path-input {
-      width: 100%;
-      min-height: 34px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 6px 10px;
-    }
-
-    .hidden {
-      display: none;
-    }
-
-    @media (max-width: 900px) {
-      .layout,
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
-      aside {
-        border-right: 0;
-        border-bottom: 1px solid var(--line);
-        max-height: 280px;
-      }
-
-      header {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      .status {
-        justify-content: flex-start;
-      }
-    }
-  </style>
 </head>
-<body>
-  <div class="app">
-    <header>
+<body class="bg-slate-50 text-slate-950 antialiased">
+  <div class="grid min-h-screen grid-rows-[auto_1fr]">
+    <header class="flex flex-col gap-3 border-b border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h1>jsondb viewer</h1>
-        <div class="muted" id="subtitle">Loading local fixture database</div>
+        <h1 class="text-lg font-bold tracking-normal text-slate-950">jsondb viewer</h1>
+        <div class="${mutedClass}" id="subtitle">Loading local fixture database</div>
       </div>
-      <div class="status" id="status"></div>
+      <div class="${rowClass} sm:justify-end" id="status"></div>
     </header>
-    <div class="layout">
-      <aside>
-        <div class="toolbar">
-          <h2>Resources</h2>
-          <button type="button" id="refresh">Refresh</button>
+    <div class="grid min-h-0 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+      <aside class="max-h-72 overflow-auto border-b border-slate-200 bg-slate-50 p-4 lg:max-h-none lg:border-b-0 lg:border-r">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-bold tracking-normal text-slate-950">Resources</h2>
+          <button type="button" id="refresh" class="${buttonClass}">Refresh</button>
         </div>
-        <div id="resource-list" class="resource-list"></div>
+        <div id="resource-list" class="grid gap-2"></div>
       </aside>
-      <main>
-        <div class="toolbar">
+      <main class="min-w-0 overflow-auto p-5">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 id="resource-title">Select a resource</h2>
-            <div class="muted" id="resource-detail"></div>
+            <h2 id="resource-title" class="text-base font-bold tracking-normal text-slate-950">Select a resource</h2>
+            <div class="${mutedClass}" id="resource-detail"></div>
           </div>
-          <div class="tabs" role="tablist" aria-label="jsondb viewer sections">
-            <button type="button" class="tab active" data-tab="data">Data</button>
-            <button type="button" class="tab" data-tab="rest">REST</button>
-            <button type="button" class="tab" data-tab="graphql">GraphQL</button>
-            <button type="button" class="tab" data-tab="schema">Schema</button>
+          <div class="${rowClass}" role="tablist" aria-label="jsondb viewer sections">
+            <button type="button" class="${activeTabClass}" data-tab="data">Data</button>
+            <button type="button" class="${tabClass}" data-tab="rest">REST</button>
+            <button type="button" class="${tabClass}" data-tab="graphql">GraphQL</button>
+            <button type="button" class="${tabClass}" data-tab="schema">Schema</button>
           </div>
         </div>
 
-        <section id="tab-data" class="tab-panel">
-          <div class="grid">
-            <div class="panel">
-              <div class="panel-head">
-                <h3>Data</h3>
-                <button type="button" id="reload-data">Reload</button>
+        <section id="tab-data" data-tab-panel>
+          <div class="${viewerGridClass}">
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">Data</h3>
+                <button type="button" id="reload-data" class="${buttonClass}">Reload</button>
               </div>
-              <div class="panel-body" id="data-view"></div>
+              <div class="${panelBodyClass}" id="data-view"></div>
             </div>
-            <div class="panel">
-              <div class="panel-head">
-                <h3>Selected JSON</h3>
-                <button type="button" data-copy-target="json-output">Copy</button>
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">Selected JSON</h3>
+                <button type="button" data-copy-target="json-output" class="${buttonClass}">Copy</button>
               </div>
-              <div class="panel-body">
-                <pre id="json-output" class="code">{}</pre>
+              <div class="${panelBodyClass}">
+                <pre id="json-output" class="${codeClass}">{}</pre>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="tab-rest" class="tab-panel hidden">
-          <div class="grid">
-            <div class="panel">
-              <div class="panel-head">
-                <h3>REST Specs</h3>
+        <section id="tab-rest" data-tab-panel class="hidden">
+          <div class="${viewerGridClass}">
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">REST Specs</h3>
               </div>
-              <div class="panel-body stack" id="rest-examples"></div>
+              <div class="${panelBodyClass} ${stackClass}">
+                <p class="m-0 text-sm text-slate-600">Batch requests run sequentially. Earlier successful writes stay committed if a later item fails.</p>
+                <div class="${stackClass}" id="rest-examples"></div>
+              </div>
             </div>
-            <div class="panel">
-              <div class="panel-head">
-                <h3>REST Runner</h3>
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">REST Runner</h3>
               </div>
-              <div class="panel-body stack">
-                <div class="runner-grid">
-                  <select id="rest-method" aria-label="REST method">
+              <div class="${panelBodyClass} ${stackClass}">
+                <div class="grid items-center gap-2 sm:grid-cols-[auto_minmax(180px,1fr)_auto]">
+                  <select id="rest-method" aria-label="REST method" class="${selectClass}">
                     <option>GET</option>
                     <option>POST</option>
                     <option>PATCH</option>
                     <option>PUT</option>
                     <option>DELETE</option>
                   </select>
-                  <input id="rest-path" class="path-input" aria-label="REST path" value="/">
-                  <button type="button" class="primary" id="run-rest">Run</button>
+                  <input id="rest-path" class="${inputClass}" aria-label="REST path" value="/">
+                  <button type="button" class="${primaryButtonClass}" id="run-rest">Run</button>
                 </div>
-                <textarea id="rest-body" aria-label="REST request body">{}</textarea>
-                <pre id="rest-output" class="code">{}</pre>
+                <textarea id="rest-body" class="${textareaClass}" aria-label="REST request body">{}</textarea>
+                <pre id="rest-output" class="${codeClass}">{}</pre>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="tab-graphql" class="tab-panel hidden">
-          <div class="grid">
-            <div class="panel">
-              <div class="panel-head">
-                <h3>GraphQL Examples</h3>
+        <section id="tab-graphql" data-tab-panel class="hidden">
+          <div class="${viewerGridClass}">
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">GraphQL Examples</h3>
               </div>
-              <div class="panel-body stack" id="graphql-examples"></div>
+              <div class="${panelBodyClass} ${stackClass}" id="graphql-examples"></div>
             </div>
-            <div class="panel">
-              <div class="panel-head">
-                <h3>GraphQL Runner</h3>
-                <button type="button" data-copy-target="graphql-query">Copy Query</button>
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">GraphQL Runner</h3>
+                <button type="button" data-copy-target="graphql-query" class="${buttonClass}">Copy Query</button>
               </div>
-              <div class="panel-body stack">
-                <textarea id="graphql-query" aria-label="GraphQL query"></textarea>
-                <textarea id="graphql-variables" aria-label="GraphQL variables">{}</textarea>
-                <div class="row">
-                  <button type="button" class="primary" id="run-graphql">Run GraphQL</button>
-                  <button type="button" id="load-sdl">Load SDL</button>
+              <div class="${panelBodyClass} ${stackClass}">
+                <textarea id="graphql-query" class="${textareaClass}" aria-label="GraphQL query"></textarea>
+                <textarea id="graphql-variables" class="${textareaClass}" aria-label="GraphQL variables">{}</textarea>
+                <div class="${rowClass}">
+                  <button type="button" class="${primaryButtonClass}" id="run-graphql">Run GraphQL</button>
+                  <button type="button" id="load-sdl" class="${buttonClass}">Load SDL</button>
                 </div>
-                <pre id="graphql-output" class="code">{}</pre>
+                <pre id="graphql-output" class="${codeClass}">{}</pre>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="tab-schema" class="tab-panel hidden">
-          <div class="grid">
-            <div class="panel">
-              <div class="panel-head">
-                <h3>Fields</h3>
+        <section id="tab-schema" data-tab-panel class="hidden">
+          <div class="${viewerGridClass}">
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">Fields</h3>
               </div>
-              <div class="panel-body" id="field-view"></div>
+              <div class="${panelBodyClass}" id="field-view"></div>
             </div>
-            <div class="panel">
-              <div class="panel-head">
-                <h3>Generated Schema</h3>
-                <button type="button" data-copy-target="schema-output">Copy</button>
+            <div class="${panelClass}">
+              <div class="${panelHeadClass}">
+                <h3 class="text-sm font-bold tracking-normal text-slate-950">Generated Schema</h3>
+                <button type="button" data-copy-target="schema-output" class="${buttonClass}">Copy</button>
               </div>
-              <div class="panel-body">
-                <pre id="schema-output" class="code">{}</pre>
+              <div class="${panelBodyClass}">
+                <pre id="schema-output" class="${codeClass}">{}</pre>
               </div>
             </div>
           </div>
@@ -547,6 +173,23 @@ export function renderJsonDbViewer(options = {}) {
 
   <script>
     const GRAPHQL_PATH = ${JSON.stringify(graphqlPath)};
+    const BUTTON_CLASS = ${JSON.stringify(buttonClass)};
+    const TAB_CLASS = ${JSON.stringify(tabClass)};
+    const ACTIVE_TAB_CLASS = ${JSON.stringify(activeTabClass)};
+    const RESOURCE_BUTTON_CLASS = ${JSON.stringify(resourceButtonClass)};
+    const ACTIVE_RESOURCE_BUTTON_CLASS = ${JSON.stringify(activeResourceButtonClass)};
+    const PILL_CLASS = ${JSON.stringify(pillClass)};
+    const WARNING_PILL_CLASS = ${JSON.stringify(warningPillClass)};
+    const ERROR_PILL_CLASS = ${JSON.stringify(errorPillClass)};
+    const CODE_CLASS = ${JSON.stringify(codeClass)};
+    const MUTED_CLASS = ${JSON.stringify(mutedClass)};
+    const TABLE_WRAP_CLASS = ${JSON.stringify(tableWrapClass)};
+    const TABLE_CLASS = ${JSON.stringify(tableClass)};
+    const TH_CLASS = ${JSON.stringify(thClass)};
+    const TD_CLASS = ${JSON.stringify(tdClass)};
+    const EXAMPLE_CLASS = ${JSON.stringify(exampleClass)};
+    const EXAMPLE_HEAD_CLASS = ${JSON.stringify(exampleHeadClass)};
+    const ROW_CLASS = ${JSON.stringify(rowClass)};
     const state = {
       schema: null,
       resources: [],
@@ -628,7 +271,7 @@ export function renderJsonDbViewer(options = {}) {
       }
 
       document.querySelectorAll('[data-resource]').forEach((button) => {
-        button.classList.toggle('active', button.dataset.resource === name);
+        button.className = button.dataset.resource === name ? ACTIVE_RESOURCE_BUTTON_CLASS : RESOURCE_BUTTON_CLASS;
       });
 
       els.resourceTitle.textContent = state.selected.name;
@@ -670,11 +313,11 @@ export function renderJsonDbViewer(options = {}) {
       for (const resource of state.resources) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'resource-button';
+        button.className = RESOURCE_BUTTON_CLASS;
         button.dataset.resource = resource.name;
-        button.innerHTML = '<span class="resource-name"></span><span class="resource-meta"></span>';
-        button.querySelector('.resource-name').textContent = resource.name;
-        button.querySelector('.resource-meta').textContent = resource.kind + ' · ' + Object.keys(resource.fields || {}).length + ' fields';
+        button.innerHTML = '<span data-resource-name class="font-semibold text-slate-950"></span><span data-resource-meta class="text-xs text-slate-500"></span>';
+        button.querySelector('[data-resource-name]').textContent = resource.name;
+        button.querySelector('[data-resource-meta]').textContent = resource.kind + ' · ' + Object.keys(resource.fields || {}).length + ' fields';
         els.resources.append(button);
       }
     }
@@ -686,13 +329,13 @@ export function renderJsonDbViewer(options = {}) {
         return;
       }
 
-      els.dataView.innerHTML = '<pre class="code"></pre>';
+      els.dataView.innerHTML = '<pre class="' + CODE_CLASS + '"></pre>';
       els.dataView.querySelector('pre').textContent = pretty(data);
     }
 
     function renderTable(records) {
       if (records.length === 0) {
-        return '<div class="muted">[]</div>';
+        return '<div class="' + MUTED_CLASS + '">[]</div>';
       }
 
       const columns = Array.from(records.reduce((set, record) => {
@@ -700,9 +343,9 @@ export function renderJsonDbViewer(options = {}) {
         return set;
       }, new Set()));
 
-      const head = columns.map((column) => '<th>' + escapeHtml(column) + '</th>').join('');
-      const rows = records.map((record) => '<tr>' + columns.map((column) => '<td>' + escapeHtml(formatCell(record[column])) + '</td>').join('') + '</tr>').join('');
-      return '<div class="table-wrap"><table><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+      const head = columns.map((column) => '<th class="' + TH_CLASS + '">' + escapeHtml(column) + '</th>').join('');
+      const rows = records.map((record) => '<tr>' + columns.map((column) => '<td class="' + TD_CLASS + '">' + escapeHtml(formatCell(record[column])) + '</td>').join('') + '</tr>').join('');
+      return '<div class="' + TABLE_WRAP_CLASS + '"><table class="' + TABLE_CLASS + '"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
     function renderRestExamples() {
@@ -729,21 +372,24 @@ export function renderJsonDbViewer(options = {}) {
 
     function renderFields() {
       const rows = Object.entries(state.selected.fields || {}).map(([name, field]) => {
-        return '<tr><td>' + escapeHtml(name) + '</td><td>' + escapeHtml(fieldType(field)) + '</td><td>' + escapeHtml(field.required ? 'yes' : 'no') + '</td><td>' + escapeHtml(field.description || '') + '</td></tr>';
+        return '<tr><td class="' + TD_CLASS + '">' + escapeHtml(name) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(fieldType(field)) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(field.required ? 'yes' : 'no') + '</td><td class="' + TD_CLASS + '">' + escapeHtml(field.description || '') + '</td></tr>';
       }).join('');
-      els.fieldView.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      els.fieldView.innerHTML = '<div class="' + TABLE_WRAP_CLASS + '"><table class="' + TABLE_CLASS + '"><thead><tr><th class="' + TH_CLASS + '">Field</th><th class="' + TH_CLASS + '">Type</th><th class="' + TH_CLASS + '">Required</th><th class="' + TH_CLASS + '">Description</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
     function exampleView(example, kind) {
       const element = document.createElement('div');
-      element.className = 'example';
+      element.className = EXAMPLE_CLASS;
       const copyText = kind === 'rest' ? restCopyText(example) : example.query;
       const payload = JSON.stringify({ kind, ...example });
-      element.innerHTML = '<div class="example-head"><div><strong></strong><div class="muted"></div></div><div class="row"><button type="button" data-load-example="">Load</button><button type="button">Copy</button></div></div><pre class="code"></pre>';
+      element.innerHTML = '<div class="' + EXAMPLE_HEAD_CLASS + '"><div><strong class="text-sm font-semibold text-slate-950"></strong><div data-example-meta class="' + MUTED_CLASS + '"></div></div><div class="' + ROW_CLASS + '"><button type="button" data-load-example="">Load</button><button type="button" data-copy-example>Copy</button></div></div><pre class="' + CODE_CLASS + '"></pre>';
       element.querySelector('strong').textContent = example.name;
-      element.querySelector('.muted').textContent = kind === 'rest' ? example.method + ' ' + example.path : 'GraphQL';
+      element.querySelector('[data-example-meta]').textContent = kind === 'rest' ? example.method + ' ' + example.path : 'GraphQL';
       element.querySelector('[data-load-example]').dataset.loadExample = payload;
-      element.querySelector('.row button:last-child').addEventListener('click', () => copyTextToClipboard(copyText));
+      element.querySelectorAll('button').forEach((button) => {
+        button.className = BUTTON_CLASS;
+      });
+      element.querySelector('[data-copy-example]').addEventListener('click', () => copyTextToClipboard(copyText));
       element.querySelector('pre').textContent = copyText;
       return element;
     }
@@ -921,9 +567,9 @@ export function renderJsonDbViewer(options = {}) {
 
     function showTab(name) {
       document.querySelectorAll('[data-tab]').forEach((button) => {
-        button.classList.toggle('active', button.dataset.tab === name);
+        button.className = button.dataset.tab === name ? ACTIVE_TAB_CLASS : TAB_CLASS;
       });
-      document.querySelectorAll('.tab-panel').forEach((panel) => {
+      document.querySelectorAll('[data-tab-panel]').forEach((panel) => {
         panel.classList.toggle('hidden', panel.id !== 'tab-' + name);
       });
     }
@@ -978,7 +624,11 @@ export function renderJsonDbViewer(options = {}) {
 
     function pill(text, className) {
       const element = document.createElement('span');
-      element.className = 'pill ' + (className || '');
+      element.className = className === 'error'
+        ? ERROR_PILL_CLASS
+        : className === 'warning'
+          ? WARNING_PILL_CLASS
+          : PILL_CLASS;
       element.textContent = text;
       return element;
     }
@@ -1012,7 +662,7 @@ export function renderJsonDbViewer(options = {}) {
 
     function showFatal(error) {
       els.subtitle.textContent = 'Unable to load jsondb viewer';
-      els.dataView.innerHTML = '<pre class="code"></pre>';
+      els.dataView.innerHTML = '<pre class="' + CODE_CLASS + '"></pre>';
       els.dataView.querySelector('pre').textContent = error.stack || error.message;
     }
   </script>

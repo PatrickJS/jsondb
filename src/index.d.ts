@@ -34,6 +34,7 @@ export type JsonDbOptions = {
   server?: {
     host?: string;
     port?: number;
+    maxBodyBytes?: number;
   };
   rest?: {
     enabled?: boolean;
@@ -111,7 +112,7 @@ export type JsonDbClientOptions = {
   batching?: boolean | {
     enabled?: boolean;
     delayMs?: number;
-    dedupe?: boolean;
+    dedupe?: boolean | 'reads' | 'all';
   };
 };
 

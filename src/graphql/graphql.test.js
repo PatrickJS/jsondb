@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { openJsonFixtureDb } from '../index.js';
 import { makeProject, writeFixture } from '../../test/helpers.js';
+import { handleGraphqlRequest } from './http.js';
 import { executeGraphql } from './index.js';
 
 test('dependency-free GraphQL queries support aliases and variables', async () => {
@@ -185,6 +186,34 @@ test('dependency-free GraphQL collection mutations create update and delete reco
   });
 });
 
+test('dependency-free GraphQL mutations reject schema field type mismatches', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": { "type": "string", "required": true },
+      "role": { "type": "enum", "values": ["admin", "user"] }
+    },
+    "seed": []
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: `mutation {
+      createUser(input: { id: "u_1", email: 42, role: "owner" }) {
+        id
+      }
+    }`,
+  });
+
+  assert.equal(result.data, null);
+  assert.equal(result.errors[0].extensions.code, 'DB_SCHEMA_VALIDATION_FAILED');
+  assert.match(result.errors[0].message, /email/);
+  assert.equal(result.errors[0].extensions.details.diagnostics[0].code, 'SCHEMA_FIELD_TYPE_MISMATCH');
+});
+
 test('dependency-free GraphQL document queries and mutations work', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'settings.json', JSON.stringify({
@@ -334,3 +363,56 @@ test('GraphQL missing variable errors explain the fix', async () => {
   assert.match(result.errors[0].message, /\$id/);
   assert.match(result.errors[0].extensions.hint, /variables object/);
 });
+
+test('GraphQL HTTP handler returns 413 for oversized JSON bodies', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([]));
+
+  const db = await openJsonFixtureDb({
+    cwd,
+    server: {
+      maxBodyBytes: 12,
+    },
+  });
+  const response = makeResponse();
+
+  await handleGraphqlRequest(
+    db,
+    makeRequest('POST', {
+      query: '{ users { id } }',
+    }),
+    response,
+  );
+
+  assert.equal(response.status, 413);
+  assert.equal(response.json().error.code, 'JSON_BODY_TOO_LARGE');
+});
+
+function makeRequest(method, body) {
+  return {
+    method,
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) {
+        yield Buffer.from(JSON.stringify(body));
+      }
+    },
+  };
+}
+
+function makeResponse() {
+  return {
+    status: null,
+    headers: {},
+    body: '',
+    writeHead(status, headers = {}) {
+      this.status = status;
+      this.headers = headers;
+    },
+    end(chunk = '') {
+      this.body += chunk;
+    },
+    json() {
+      return this.body ? JSON.parse(this.body) : null;
+    },
+  };
+}
