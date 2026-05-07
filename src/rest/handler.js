@@ -1,3 +1,4 @@
+import { jsonDbError, listChoices, serializeError } from '../errors.js';
 import { makeGeneratedSchema } from '../schema.js';
 import { renderJsonDbViewer } from '../web/viewer.js';
 
@@ -10,7 +11,8 @@ export async function handleRestRequest(db, request, response, url = new URL(req
   }
 
   if (request.method === 'POST' && url.pathname === '/__jsondb/batch') {
-    sendJson(response, 200, await executeRestBatch(db, await readJsonBody(request)));
+    const result = await tryRest(async () => executeRestBatch(db, await readJsonBody(request)));
+    sendJson(response, result.status, result.body);
     return;
   }
 
@@ -32,7 +34,15 @@ export async function handleRestRequest(db, request, response, url = new URL(req
   const resource = findResourceByRoute(db, routeName);
   if (!resource) {
     sendJson(response, 404, {
-      error: `Unknown resource "${routeName}"`,
+      error: {
+        code: 'REST_UNKNOWN_RESOURCE',
+        message: `Unknown REST resource "${routeName}".`,
+        hint: `Use one of: ${listChoices([...db.resources.values()].map((resource) => resource.routePath))}.`,
+        details: {
+          routeName,
+          availableRoutes: [...db.resources.values()].map((resource) => resource.routePath),
+        },
+      },
     });
     return;
   }
@@ -52,12 +62,36 @@ export function findResourceByRoute(db, routeName) {
 export async function executeRestBatch(db, body) {
   const requests = Array.isArray(body) ? body : body.requests;
   if (!Array.isArray(requests)) {
-    throw new Error('REST batch body must be an array or an object with a requests array');
+    throw jsonDbError(
+      'REST_BATCH_INVALID_BODY',
+      'REST batch body must be an array or an object with a requests array.',
+      {
+        status: 400,
+        hint: 'Send POST /__jsondb/batch with [{ "method": "GET", "path": "/users" }].',
+        details: {
+          receivedType: body === null ? 'null' : Array.isArray(body) ? 'array' : typeof body,
+        },
+      },
+    );
   }
 
   const results = [];
-  for (const request of requests) {
-    results.push(await executeRestBatchItem(db, request));
+  for (const [index, request] of requests.entries()) {
+    try {
+      results.push({
+        index,
+        ...await executeRestBatchItem(db, request),
+      });
+    } catch (error) {
+      results.push({
+        index,
+        status: error.status ?? 500,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+        },
+        body: serializeError(error, 'REST_ERROR'),
+      });
+    }
   }
 
   return results;
@@ -70,7 +104,21 @@ export async function readJsonBody(request) {
   }
 
   const text = Buffer.concat(chunks).toString('utf8').trim();
-  return text ? JSON.parse(text) : {};
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (error) {
+    throw jsonDbError(
+      'REST_INVALID_JSON_BODY',
+      'Request body is not valid JSON.',
+      {
+        status: 400,
+        hint: 'Check for trailing commas, unquoted property names, or an incomplete JSON object.',
+        details: {
+          parserMessage: error.message,
+        },
+      },
+    );
+  }
 }
 
 export function sendJson(response, status, body) {
@@ -91,15 +139,41 @@ export function sendText(response, status, body, contentType) {
 }
 
 async function executeRestBatchItem(db, item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw jsonDbError(
+      'REST_BATCH_INVALID_ITEM',
+      'Each REST batch item must be an object.',
+      {
+        status: 400,
+        hint: 'Use an item like { "method": "GET", "path": "/users" }.',
+      },
+    );
+  }
+
   const method = String(item.method ?? 'GET').toUpperCase();
   const requestPath = String(item.path ?? '/');
 
   if (!requestPath.startsWith('/')) {
-    throw new Error(`REST batch path must start with "/": ${requestPath}`);
+    throw jsonDbError(
+      'REST_BATCH_INVALID_PATH',
+      `REST batch path must start with "/": ${requestPath}`,
+      {
+        status: 400,
+        hint: 'Use absolute local paths such as "/users", "/settings", or "/__jsondb/schema".',
+        details: { path: requestPath },
+      },
+    );
   }
 
   if (requestPath === '/__jsondb/batch') {
-    throw new Error('Nested REST batch requests are not supported');
+    throw jsonDbError(
+      'REST_BATCH_NESTED_UNSUPPORTED',
+      'Nested REST batch requests are not supported.',
+      {
+        status: 400,
+        hint: 'Flatten the batch array instead of calling /__jsondb/batch from inside another batch.',
+      },
+    );
   }
 
   const response = makeBatchResponse();
@@ -115,6 +189,27 @@ async function executeRestBatchItem(db, item) {
     headers: response.headers,
     body: response.jsonBody(),
   };
+}
+
+async function tryRest(fn) {
+  try {
+    const body = await fn();
+    return {
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body,
+    };
+  } catch (error) {
+    return {
+      status: error.status ?? 500,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: serializeError(error, 'REST_ERROR'),
+    };
+  }
 }
 
 function makeBatchRequest(method, body) {

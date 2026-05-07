@@ -103,6 +103,7 @@ Add tests for every behavior change that touches:
 - GraphQL and REST batching behavior
 - client direct and automatic batching behavior, including 10ms default windows and dedupe
 - mock delay/error behavior
+- error messages; assert code, human message, hint, and useful details for new failure modes
 - built-in viewer behavior and generated examples
 
 ## GitHub Actions

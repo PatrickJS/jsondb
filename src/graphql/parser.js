@@ -1,3 +1,5 @@
+import { jsonDbError } from '../errors.js';
+
 export function parseGraphql(source) {
   const parser = new Parser(tokenize(source));
   return parser.parseDocument();
@@ -23,7 +25,13 @@ class Parser {
         this.skipBalanced('(', ')');
       }
     } else if (this.peekName('subscription')) {
-      throw new Error('Subscriptions are not supported');
+      throw jsonDbError(
+        'GRAPHQL_SUBSCRIPTION_UNSUPPORTED',
+        'GraphQL subscriptions are not supported by jsondb.',
+        {
+          hint: 'Use query or mutation operations. jsondb is a local fixture server and does not keep long-lived subscription streams.',
+        },
+      );
     }
 
     return {
@@ -134,7 +142,14 @@ class Parser {
       return this.parseObject();
     }
 
-    throw new Error(`Unexpected GraphQL value token "${token.value}"`);
+    throw jsonDbError(
+      'GRAPHQL_PARSE_UNEXPECTED_VALUE',
+      `Unexpected GraphQL value token "${token.value}".`,
+      {
+        hint: 'Use a string, number, boolean, null, variable, list, or object literal for argument values.',
+        details: { token: token.value },
+      },
+    );
   }
 
   parseList() {
@@ -176,7 +191,14 @@ class Parser {
     while (depth > 0) {
       const token = this.consume();
       if (token.type === 'eof') {
-        throw new Error(`Unterminated GraphQL group "${open}"`);
+        throw jsonDbError(
+          'GRAPHQL_PARSE_UNTERMINATED_GROUP',
+          `Unterminated GraphQL group "${open}".`,
+          {
+            hint: `Add the matching "${close}" before the end of the query.`,
+            details: { open, close },
+          },
+        );
       }
       if (token.value === open) {
         depth += 1;
@@ -190,7 +212,14 @@ class Parser {
   expect(value) {
     const token = this.consume();
     if (token.value !== value) {
-      throw new Error(`Expected GraphQL token "${value}" but found "${token.value}"`);
+      throw jsonDbError(
+        'GRAPHQL_PARSE_EXPECTED_TOKEN',
+        `Expected GraphQL token "${value}" but found "${token.value}".`,
+        {
+          hint: 'Check the query punctuation near this token. Common causes are missing braces, parentheses, or colons.',
+          details: { expected: value, found: token.value },
+        },
+      );
     }
     return token;
   }
@@ -198,7 +227,14 @@ class Parser {
   expectName() {
     const token = this.consume();
     if (token.type !== 'name') {
-      throw new Error(`Expected GraphQL name but found "${token.value}"`);
+      throw jsonDbError(
+        'GRAPHQL_PARSE_EXPECTED_NAME',
+        `Expected a GraphQL name but found "${token.value}".`,
+        {
+          hint: 'Field names, aliases, arguments, and operation names must use GraphQL identifier syntax.',
+          details: { found: token.value },
+        },
+      );
     }
     return token.value;
   }
@@ -269,7 +305,14 @@ function tokenize(source) {
       continue;
     }
 
-    throw new Error(`Unexpected GraphQL character "${char}"`);
+    throw jsonDbError(
+      'GRAPHQL_PARSE_UNEXPECTED_CHARACTER',
+      `Unexpected GraphQL character "${char}".`,
+      {
+        hint: 'jsondb supports a focused GraphQL subset. Check for unsupported punctuation, fragments, or directives.',
+        details: { character: char, index },
+      },
+    );
   }
 
   tokens.push({ type: 'eof', value: '<eof>' });
@@ -308,7 +351,14 @@ function readString(source, start) {
     index += 1;
   }
 
-  throw new Error('Unterminated GraphQL string');
+  throw jsonDbError(
+    'GRAPHQL_PARSE_UNTERMINATED_STRING',
+    'Unterminated GraphQL string.',
+    {
+      hint: 'Close the string with a double quote, or escape embedded quotes with \\".',
+      details: { start },
+    },
+  );
 }
 
 function readNumber(source, start) {

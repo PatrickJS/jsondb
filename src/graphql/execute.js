@@ -1,4 +1,5 @@
 import { camelCase, singularResourceName } from '../names.js';
+import { describeValue, graphqlError, jsonDbError, listChoices } from '../errors.js';
 import { parseGraphql } from './parser.js';
 
 export async function executeGraphql(db, request) {
@@ -25,7 +26,14 @@ async function executeGraphqlSingle(db, request) {
     const variables = typeof request === 'string' ? {} : request.variables ?? {};
 
     if (!query || typeof query !== 'string') {
-      throw new Error('GraphQL request must include a query string');
+      throw jsonDbError(
+        'GRAPHQL_MISSING_QUERY',
+        'GraphQL request is missing a query string.',
+        {
+          hint: 'Pass a raw query string or an object like { query: "{ users { id } }", variables: {} }.',
+          details: { receivedType: describeValue(request) },
+        },
+      );
     }
 
     const document = parseGraphql(query);
@@ -35,9 +43,7 @@ async function executeGraphqlSingle(db, request) {
     return {
       data: null,
       errors: [
-        {
-          message: error.message,
-        },
+        graphqlError(error),
       ],
     };
   }
@@ -60,7 +66,17 @@ async function executeSelectionSet(db, operation, selections, variables) {
 async function executeQueryField(db, selection, variables) {
   const resource = findQueryResource(db, selection.name);
   if (!resource) {
-    throw new Error(`Unknown GraphQL query field "${selection.name}"`);
+    throw jsonDbError(
+      'GRAPHQL_UNKNOWN_QUERY_FIELD',
+      `Unknown GraphQL query field "${selection.name}".`,
+      {
+        hint: `Use one of: ${listChoices(availableQueryFields(db))}.`,
+        details: {
+          field: selection.name,
+          availableFields: availableQueryFields(db),
+        },
+      },
+    );
   }
 
   if (resource.kind === 'document') {
@@ -73,7 +89,14 @@ async function executeQueryField(db, selection, variables) {
 
   const id = readArgument(selection, 'id', variables);
   if (id === undefined || id === null || id === '') {
-    throw new Error(`GraphQL field "${selection.name}" requires argument "id"`);
+    throw jsonDbError(
+      'GRAPHQL_MISSING_ID_ARGUMENT',
+      `GraphQL field "${selection.name}" requires argument "id".`,
+      {
+        hint: `Use ${selection.name}(id: "example-id") { id } or pass a variable such as ${selection.name}(id: $id).`,
+        details: { field: selection.name, argument: 'id' },
+      },
+    );
   }
 
   return db.collection(resource.name).get(id);
@@ -82,7 +105,17 @@ async function executeQueryField(db, selection, variables) {
 async function executeMutationField(db, selection, variables) {
   const mutation = parseMutationName(db, selection.name);
   if (!mutation) {
-    throw new Error(`Unknown GraphQL mutation field "${selection.name}"`);
+    throw jsonDbError(
+      'GRAPHQL_UNKNOWN_MUTATION_FIELD',
+      `Unknown GraphQL mutation field "${selection.name}".`,
+      {
+        hint: `Use one of: ${listChoices(availableMutationFields(db))}.`,
+        details: {
+          field: selection.name,
+          availableFields: availableMutationFields(db),
+        },
+      },
+    );
   }
 
   if (mutation.resource.kind === 'collection') {
@@ -98,7 +131,7 @@ async function executeCollectionMutation(db, mutation, selection, variables) {
   if (mutation.action === 'create') {
     const input = readArgument(selection, 'input', variables);
     if (!isObject(input)) {
-      throw new Error(`GraphQL mutation "${selection.name}" requires object argument "input"`);
+      throw argumentTypeError(selection.name, 'input', 'object', input);
     }
     return collection.create(input);
   }
@@ -107,7 +140,7 @@ async function executeCollectionMutation(db, mutation, selection, variables) {
     const id = readArgument(selection, 'id', variables);
     const patch = readArgument(selection, 'patch', variables);
     if (!isObject(patch)) {
-      throw new Error(`GraphQL mutation "${selection.name}" requires object argument "patch"`);
+      throw argumentTypeError(selection.name, 'patch', 'object', patch);
     }
     return collection.patch(id, patch);
   }
@@ -117,7 +150,7 @@ async function executeCollectionMutation(db, mutation, selection, variables) {
     return collection.delete(id);
   }
 
-  throw new Error(`Unsupported GraphQL collection mutation "${selection.name}"`);
+  throw jsonDbError('GRAPHQL_UNSUPPORTED_MUTATION', `Unsupported GraphQL collection mutation "${selection.name}".`);
 }
 
 async function executeDocumentMutation(db, mutation, selection, variables) {
@@ -126,7 +159,7 @@ async function executeDocumentMutation(db, mutation, selection, variables) {
   if (mutation.action === 'update') {
     const patch = readArgument(selection, 'patch', variables);
     if (!isObject(patch)) {
-      throw new Error(`GraphQL mutation "${selection.name}" requires object argument "patch"`);
+      throw argumentTypeError(selection.name, 'patch', 'object', patch);
     }
     return document.update(patch);
   }
@@ -138,7 +171,7 @@ async function executeDocumentMutation(db, mutation, selection, variables) {
     return document.all();
   }
 
-  throw new Error(`Unsupported GraphQL document mutation "${selection.name}"`);
+  throw jsonDbError('GRAPHQL_UNSUPPORTED_MUTATION', `Unsupported GraphQL document mutation "${selection.name}".`);
 }
 
 function findQueryResource(db, fieldName) {
@@ -202,6 +235,19 @@ function readArgument(selection, name, variables) {
 function evaluateValue(valueNode, variables) {
   switch (valueNode.kind) {
     case 'variable':
+      if (!(valueNode.name in variables)) {
+        throw jsonDbError(
+          'GRAPHQL_MISSING_VARIABLE',
+          `GraphQL variable "$${valueNode.name}" was referenced but not provided.`,
+          {
+            hint: `Add "${valueNode.name}" to the variables object for this request.`,
+            details: {
+              variable: valueNode.name,
+              providedVariables: Object.keys(variables),
+            },
+          },
+        );
+      }
       return variables[valueNode.name];
     case 'list':
       return valueNode.values.map((value) => evaluateValue(value, variables));
@@ -229,4 +275,39 @@ function responseKey(selection) {
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function argumentTypeError(field, argument, expected, actual) {
+  return jsonDbError(
+    'GRAPHQL_INVALID_ARGUMENT_TYPE',
+    `GraphQL mutation "${field}" requires ${expected} argument "${argument}", but received ${describeValue(actual)}.`,
+    {
+      hint: `Pass ${field}(${argument}: { ... }) or provide a variable whose value is an object.`,
+      details: {
+        field,
+        argument,
+        expected,
+        received: describeValue(actual),
+      },
+    },
+  );
+}
+
+function availableQueryFields(db) {
+  return [...db.resources.values()].flatMap((resource) => {
+    if (resource.kind === 'document') {
+      return [resource.name];
+    }
+
+    return [collectionRootName(resource), singleRootName(resource)];
+  });
+}
+
+function availableMutationFields(db) {
+  return [...db.resources.values()].flatMap((resource) => {
+    const actions = resource.kind === 'collection'
+      ? ['create', 'update', 'delete']
+      : ['update', 'set'];
+    return actions.map((action) => `${action}${resource.typeName}`);
+  });
 }

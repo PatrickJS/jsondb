@@ -111,6 +111,32 @@ test('defaults apply when creating records through the package API', async () =>
   });
 });
 
+test('package API duplicate ids produce actionable errors', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+
+  await assert.rejects(
+    () => db.collection('users').create({
+      id: 'u_1',
+      name: 'Duplicate Ada',
+    }),
+    (error) => {
+      assert.equal(error.code, 'DB_CREATE_DUPLICATE_ID');
+      assert.match(error.message, /already exists/);
+      assert.match(error.hint, /patch\/update/);
+      assert.equal(error.details.resource, 'users');
+      return true;
+    },
+  );
+});
+
 test('.schema.mjs files can use schema helpers', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.mjs', `import { collection, field } from 'json-fixture-db/schema';

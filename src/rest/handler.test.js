@@ -188,6 +188,7 @@ test('REST handler supports batched requests', async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(response.json(), [
     {
+      index: 0,
       status: 201,
       headers: {
         'content-type': 'application/json; charset=utf-8',
@@ -199,6 +200,7 @@ test('REST handler supports batched requests', async () => {
       },
     },
     {
+      index: 1,
       status: 200,
       headers: {
         'content-type': 'application/json; charset=utf-8',
@@ -210,6 +212,32 @@ test('REST handler supports batched requests', async () => {
       },
     },
   ]);
+});
+
+test('REST batch errors include code hint and item index', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('POST', [
+      {
+        method: 'GET',
+        path: 'users',
+      },
+    ]),
+    response,
+    new URL('http://jsondb.local/__jsondb/batch'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json()[0].index, 0);
+  assert.equal(response.json()[0].status, 400);
+  assert.equal(response.json()[0].body.error.code, 'REST_BATCH_INVALID_PATH');
+  assert.match(response.json()[0].body.error.hint, /absolute local paths/);
 });
 
 function makeRequest(method, body) {

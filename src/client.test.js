@@ -143,6 +143,43 @@ test('client can batch REST requests', async () => {
   assert.equal(calls[0].url, 'http://jsondb.local/__jsondb/batch');
 });
 
+test('client HTTP errors explain the failing URL and response body', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return {
+      ok: false,
+      status: 503,
+      headers: new Headers(),
+      async text() {
+        return JSON.stringify({
+          error: {
+            code: 'SERVER_DOWN',
+            message: 'Server unavailable',
+          },
+        });
+      },
+    };
+  };
+
+  test.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const client = createJsonDbClient({ baseUrl: 'http://jsondb.local' });
+
+  await assert.rejects(
+    () => client.graphql('{ users { id } }'),
+    (error) => {
+      assert.equal(error.code, 'CLIENT_HTTP_ERROR');
+      assert.match(error.message, /http:\/\/jsondb\.local\/graphql/);
+      assert.equal(error.details.responseBody.error.code, 'SERVER_DOWN');
+      return true;
+    },
+  );
+});
+
 function withMockFetch(responses) {
   const originalFetch = globalThis.fetch;
   const calls = [];

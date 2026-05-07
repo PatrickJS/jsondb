@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { loadConfig } from './config.js';
+import { jsonDbError, listChoices } from './errors.js';
 import { loadProjectSchema } from './schema.js';
 import { syncJsonFixtureDb, applyDefaultsToRecord } from './sync.js';
 import { readJsonState, statePathForResource, writeJsonState } from './state.js';
@@ -33,11 +34,36 @@ export class JsonFixtureDb {
   requireResource(name, kind) {
     const resource = this.resources.get(name);
     if (!resource) {
-      throw new Error(`Unknown jsondb resource "${name}"`);
+      throw jsonDbError(
+        'DB_UNKNOWN_RESOURCE',
+        `Unknown jsondb resource "${name}".`,
+        {
+          status: 404,
+          hint: `Use one of: ${listChoices(this.resourceNames())}.`,
+          details: {
+            resource: name,
+            availableResources: this.resourceNames(),
+          },
+        },
+      );
     }
 
     if (resource.kind !== kind) {
-      throw new Error(`Resource "${name}" is a ${resource.kind}, not a ${kind}`);
+      throw jsonDbError(
+        'DB_RESOURCE_KIND_MISMATCH',
+        `Resource "${name}" is a ${resource.kind}, not a ${kind}.`,
+        {
+          status: 400,
+          hint: resource.kind === 'collection'
+            ? `Use db.collection("${name}") for this resource.`
+            : `Use db.document("${name}") for this resource.`,
+          details: {
+            resource: name,
+            expectedKind: kind,
+            actualKind: resource.kind,
+          },
+        },
+      );
     }
 
     return resource;
@@ -72,11 +98,34 @@ export class JsonDbCollection {
     const id = nextRecord[this.resource.idField];
 
     if (id === undefined || id === null || id === '') {
-      throw new Error(`Cannot create ${this.resource.name}: missing id field "${this.resource.idField}"`);
+      throw jsonDbError(
+        'DB_CREATE_MISSING_ID',
+        `Cannot create "${this.resource.name}" record because id field "${this.resource.idField}" is missing.`,
+        {
+          status: 400,
+          hint: `Include "${this.resource.idField}" in the record body, or configure collections.${this.resource.name}.idField if this collection uses a different id field.`,
+          details: {
+            resource: this.resource.name,
+            idField: this.resource.idField,
+          },
+        },
+      );
     }
 
     if (records.some((existing) => existing?.[this.resource.idField] === id)) {
-      throw new Error(`Cannot create ${this.resource.name}: duplicate id "${id}"`);
+      throw jsonDbError(
+        'DB_CREATE_DUPLICATE_ID',
+        `Cannot create "${this.resource.name}" record because id "${id}" already exists.`,
+        {
+          status: 409,
+          hint: 'Use a unique id, or call patch/update if you intended to modify the existing record.',
+          details: {
+            resource: this.resource.name,
+            idField: this.resource.idField,
+            id,
+          },
+        },
+      );
     }
 
     records.push(nextRecord);
@@ -169,7 +218,14 @@ function getPointer(document, pointer) {
 function setPointer(document, pointer, value) {
   const parts = parsePointer(pointer);
   if (parts.length === 0) {
-    throw new Error('Cannot set the root document with set(); use put() instead');
+    throw jsonDbError(
+      'DB_DOCUMENT_SET_ROOT',
+      'Cannot set the root document with set().',
+      {
+        status: 400,
+        hint: 'Use document.put(value) to replace the whole document, or pass a JSON pointer like "/theme" to set a nested value.',
+      },
+    );
   }
 
   let current = document;
@@ -188,7 +244,15 @@ function parsePointer(pointer) {
   }
 
   if (!pointer.startsWith('/')) {
-    throw new Error(`Invalid JSON pointer "${pointer}"`);
+    throw jsonDbError(
+      'DB_INVALID_JSON_POINTER',
+      `Invalid JSON pointer "${pointer}".`,
+      {
+        status: 400,
+        hint: 'JSON pointers must start with "/". For example: "/theme" or "/features/billing".',
+        details: { pointer },
+      },
+    );
   }
 
   return pointer

@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { openJsonFixtureDb } from './db.js';
+import { serializeError } from './errors.js';
 import { handleGraphqlRequest } from './graphql/http.js';
 import { runMockBehavior } from './mock.js';
 import { handleRestRequest, sendJson } from './rest/handler.js';
@@ -10,9 +11,7 @@ export async function startJsonDbServer(options = {}) {
   const port = Number(options.port ?? db.config.server?.port ?? 7331);
   const server = http.createServer((request, response) => {
     handleRequest(db, request, response).catch((error) => {
-      sendJson(response, 500, {
-        error: error.message,
-      });
+      sendJson(response, error.status ?? 500, serializeError(error, 'SERVER_ERROR'));
     });
   });
 

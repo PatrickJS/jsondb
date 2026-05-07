@@ -779,6 +779,54 @@ export default {
 };
 ```
 
+## Error Messages
+
+Errors should be readable by humans and useful to AI agents. They should explain:
+
+```txt
+what failed
+where it failed
+what value was received when useful
+what values or commands are valid
+what to try next
+```
+
+REST and server errors should use this shape:
+
+```json
+{
+  "error": {
+    "code": "REST_BATCH_INVALID_PATH",
+    "message": "REST batch path must start with \"/\": users",
+    "hint": "Use absolute local paths such as \"/users\", \"/settings\", or \"/__jsondb/schema\".",
+    "details": {
+      "path": "users"
+    }
+  }
+}
+```
+
+GraphQL errors should use standard GraphQL `errors[]` entries with `extensions`:
+
+```json
+{
+  "data": null,
+  "errors": [
+    {
+      "message": "Unknown GraphQL query field \"nope\".",
+      "extensions": {
+        "code": "GRAPHQL_UNKNOWN_QUERY_FIELD",
+        "hint": "Use one of: \"users\", \"user\".",
+        "details": {
+          "field": "nope",
+          "availableFields": ["users", "user"]
+        }
+      }
+    }
+  ]
+}
+```
+
 ## Codex Prompt Add-On
 
 Append this to the Codex prompt:

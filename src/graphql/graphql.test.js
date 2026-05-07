@@ -294,3 +294,43 @@ test('dependency-free GraphQL supports batched requests', async () => {
     },
   ]);
 });
+
+test('GraphQL errors include codes hints and available fields', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: '{ nope { id } }',
+  });
+
+  assert.equal(result.data, null);
+  assert.equal(result.errors[0].extensions.code, 'GRAPHQL_UNKNOWN_QUERY_FIELD');
+  assert.match(result.errors[0].message, /Unknown GraphQL query field "nope"/);
+  assert.match(result.errors[0].extensions.hint, /users/);
+  assert.deepEqual(result.errors[0].extensions.details.availableFields, ['users', 'user']);
+});
+
+test('GraphQL missing variable errors explain the fix', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: 'query GetUser($id: ID!) { user(id: $id) { id } }',
+  });
+
+  assert.equal(result.errors[0].extensions.code, 'GRAPHQL_MISSING_VARIABLE');
+  assert.match(result.errors[0].message, /\$id/);
+  assert.match(result.errors[0].extensions.hint, /variables object/);
+});

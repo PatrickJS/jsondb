@@ -1,3 +1,5 @@
+import { jsonDbError } from './errors.js';
+
 export function createJsonDbClient(options = {}) {
   const baseUrl = options.baseUrl ?? '';
   const batching = normalizeBatching(options.batching);
@@ -159,15 +161,47 @@ function groupQueuedItems(items) {
 }
 
 async function postJson(url, body) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw jsonDbError(
+      'CLIENT_FETCH_FAILED',
+      `jsondb client could not reach ${url}.`,
+      {
+        hint: 'Make sure jsondb serve is running and baseUrl points at the correct host and port.',
+        details: {
+          url,
+          cause: error.message,
+        },
+      },
+    );
+  }
 
-  return readResponseBody(response);
+  const responseBody = await readResponseBody(response);
+  if (response.ok === false) {
+    throw jsonDbError(
+      'CLIENT_HTTP_ERROR',
+      `jsondb client request to ${url} failed with HTTP ${response.status}.`,
+      {
+        status: response.status,
+        hint: 'Inspect details.responseBody for the server error payload.',
+        details: {
+          url,
+          status: response.status,
+          responseBody,
+        },
+      },
+    );
+  }
+
+  return responseBody;
 }
 
 async function readResponseBody(response) {
@@ -196,6 +230,16 @@ function normalizeRestRequest(method, path, body) {
 }
 
 function normalizeRestRequestObject(request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) {
+    throw jsonDbError(
+      'CLIENT_REST_INVALID_REQUEST',
+      'REST request must be an object or method/path arguments.',
+      {
+        hint: 'Use client.rest("GET", "/users") or client.rest({ method: "GET", path: "/users" }).',
+      },
+    );
+  }
+
   return {
     method: String(request.method ?? 'GET').toUpperCase(),
     path: request.path ?? '/',
