@@ -10,7 +10,9 @@ export type Project = {
   name: string;
   ownerId: string;
   status?: ProjectStatus;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    priority?: string;
+  };
 };
 
 export type Settings = {
@@ -32,6 +34,8 @@ export type User = {
   email: string;
   /** Local authorization role. */
   role?: UserRole;
+  /** Optional social handle used by local profile demos. */
+  twitterHandle?: string;
   profile?: {
     title?: string;
     location?: string;

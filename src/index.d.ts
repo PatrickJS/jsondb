@@ -8,8 +8,9 @@ export type JsonDbOptions = {
   configPath?: string;
   sourceDir?: string;
   stateDir?: string;
-  mode?: 'mirror';
+  mode?: 'mirror' | 'source';
   syncOnOpen?: boolean;
+  allowSourceErrors?: boolean;
   types?: {
     enabled?: boolean;
     outFile?: string;
@@ -141,7 +142,7 @@ export type JsonDbClient = {
 export function openJsonFixtureDb<Types extends JsonDbTypeMap = JsonDbTypeMap>(options?: JsonDbOptions): Promise<JsonFixtureDb<Types>>;
 export function createJsonDbClient(options?: JsonDbClientOptions): JsonDbClient;
 export function loadConfig(options?: JsonDbOptions): Promise<JsonDbOptions>;
-export function syncJsonFixtureDb(config: JsonDbOptions): Promise<unknown>;
+export function syncJsonFixtureDb(config: JsonDbOptions, options?: { allowErrors?: boolean }): Promise<unknown>;
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
 export function startJsonDbServer(options?: JsonDbOptions): Promise<{ server: unknown; db: JsonFixtureDb; url: string }>;
 export function executeGraphql(

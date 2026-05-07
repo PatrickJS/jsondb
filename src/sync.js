@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { loadProjectSchema } from './schema.js';
+import { loadProjectSchema, makeGeneratedSchema } from './schema.js';
 import { generateTypes } from './types.js';
 import { readJsonState, statePathForResource, writeJsonState } from './state.js';
 import { writeText } from './fs-utils.js';
@@ -19,6 +20,9 @@ export async function syncJsonFixtureDb(config, options = {}) {
     error.diagnostics = project.diagnostics;
     throw error;
   }
+
+  await writeGeneratedIdsToSources(config, project.resources, logs);
+  project.schema = makeGeneratedSchema(project.resources, project.diagnostics);
 
   await ensureRuntimeDirs(config);
 
@@ -62,11 +66,10 @@ async function syncStateResource(config, resource, sourceMetadata) {
   const statePath = statePathForResource(config, resource.name);
   const existing = await readJsonState(statePath, undefined);
   const metadata = sourceMetadata.resources[resource.name];
-  const csvSourceChanged = resource.dataFormat === 'csv'
-    && resource.dataHash
+  const sourceChanged = resource.dataHash
     && metadata?.hash !== resource.dataHash;
 
-  if (existing === undefined || csvSourceChanged) {
+  if (existing === undefined || sourceChanged) {
     await writeJsonState(statePath, applyDefaultsToSeed(resource.seed, resource, config));
     updateSourceMetadata(sourceMetadata, config, resource);
     return;
@@ -80,7 +83,7 @@ async function syncStateResource(config, resource, sourceMetadata) {
 }
 
 function updateSourceMetadata(sourceMetadata, config, resource) {
-  if (resource.dataFormat !== 'csv' || !resource.dataHash) {
+  if (!resource.dataHash) {
     return;
   }
 
@@ -90,6 +93,24 @@ function updateSourceMetadata(sourceMetadata, config, resource) {
     hash: resource.dataHash,
     updatedAt: new Date().toISOString(),
   };
+}
+
+async function writeGeneratedIdsToSources(config, resources, logs) {
+  if (config.mode === 'mirror') {
+    return;
+  }
+
+  for (const resource of resources) {
+    if (!resource.generatedIds || resource.dataFormat !== 'json' || !resource.dataPath) {
+      continue;
+    }
+
+    const text = `${JSON.stringify(resource.seed, null, 2)}\n`;
+    await writeText(resource.dataPath, text);
+    resource.dataHash = createHash('sha256').update(text).digest('hex');
+    resource.generatedIds = false;
+    logs.push(`Updated ${path.relative(config.cwd, resource.dataPath)} with generated ids`);
+  }
 }
 
 export function applyDefaultsToSeed(seed, resource, config) {

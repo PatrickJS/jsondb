@@ -679,7 +679,9 @@ diagnostics summary
 
 CSV data-first fixtures should be treated as collections. The first row is the header row, headers become JSON field names, values are parsed into records, and the runtime mirror is written as `.jsondb/state/<resource>.json`.
 
-The runtime mirror should track source hashes for CSV files. If a CSV hash changes during sync, regenerate the JSON state for that resource from the CSV. If the hash is unchanged, preserve runtime mirror edits.
+Collection fixtures should always have an id field. If a JSON/JSONC/CSV collection source omits `id`, generate counter ids in the runtime mirror, starting at `"1"` and avoiding existing ids. In default `mode: 'mirror'`, source files stay unchanged. In non-mirror source mode, write generated ids back to plain `.json` fixtures.
+
+The runtime mirror should track source hashes for JSON, JSONC, and CSV files. If a source hash changes during sync, regenerate the JSON state for that resource from the source fixture. If the hash is unchanged, preserve runtime mirror edits.
 
 The viewer should support uploading a CSV through:
 
@@ -688,6 +690,8 @@ POST /__jsondb/import
 ```
 
 The upload should copy the CSV into `db/`, run sync, reload the in-memory resources, update the URL query parameter to the imported resource, and reload the dashboard view.
+
+While serving, jsondb should watch `db/` for fixture and schema changes, ignoring `.jsondb/`. On change, reload resources and notify the single-file viewer through `/__jsondb/events` so the dashboard refreshes automatically. If one source file fails to parse or load, report a file-specific diagnostic in the viewer and keep the remaining valid resources available.
 
 GraphQL should support a dependency-free subset suitable for local app development:
 

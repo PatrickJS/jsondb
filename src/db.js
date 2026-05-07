@@ -10,16 +10,18 @@ export async function openJsonFixtureDb(options = {}) {
   const config = await loadConfig(options);
   const syncOnOpen = options.syncOnOpen ?? true;
   const project = syncOnOpen
-    ? await syncJsonFixtureDb(config)
+    ? await syncJsonFixtureDb(config, { allowErrors: options.allowSourceErrors === true })
     : await loadProjectSchema(config);
 
-  return new JsonFixtureDb(config, project.resources);
+  return new JsonFixtureDb(config, project.resources, project.diagnostics);
 }
 
 export class JsonFixtureDb {
-  constructor(config, resources) {
+  constructor(config, resources, diagnostics = []) {
     this.config = config;
     this.resources = new Map(resources.map((resource) => [resource.name, resource]));
+    this.diagnostics = diagnostics;
+    this.schemaVersion = Date.now();
   }
 
   collection(name) {
@@ -88,7 +90,7 @@ export class JsonDbCollection {
 
   async get(id) {
     const records = await this.all();
-    return records.find((record) => record?.[this.resource.idField] === id) ?? null;
+    return records.find((record) => idMatches(record?.[this.resource.idField], id)) ?? null;
   }
 
   async create(record) {
@@ -97,28 +99,18 @@ export class JsonDbCollection {
       const nextRecord = this.config.defaults?.applyOnCreate === false
         ? { ...record }
         : applyDefaultsToRecord(record, this.resource);
-      const id = nextRecord[this.resource.idField];
+      let id = nextRecord[this.resource.idField];
 
       if (id === undefined || id === null || id === '') {
-        throw jsonDbError(
-          'DB_CREATE_MISSING_ID',
-          `Cannot create "${this.resource.name}" record because id field "${this.resource.idField}" is missing.`,
-          {
-            status: 400,
-            hint: `Include "${this.resource.idField}" in the record body, or configure collections.${this.resource.name}.idField if this collection uses a different id field.`,
-            details: {
-              resource: this.resource.name,
-              idField: this.resource.idField,
-            },
-          },
-        );
+        id = nextCollectionId(records, this.resource.idField);
+        nextRecord[this.resource.idField] = id;
       }
 
       assertRecordMatchesResource(nextRecord, this.resource, this.config, {
         source: `${this.resource.name} create body`,
       });
 
-      if (records.some((existing) => existing?.[this.resource.idField] === id)) {
+      if (records.some((existing) => idMatches(existing?.[this.resource.idField], id))) {
         throw jsonDbError(
           'DB_CREATE_DUPLICATE_ID',
           `Cannot create "${this.resource.name}" record because id "${id}" already exists.`,
@@ -143,15 +135,16 @@ export class JsonDbCollection {
   async update(id, patch) {
     return withJsonStateWrite(this.path, async () => {
       const records = await this.all();
-      const index = records.findIndex((record) => record?.[this.resource.idField] === id);
+      const index = records.findIndex((record) => idMatches(record?.[this.resource.idField], id));
       if (index === -1) {
         return null;
       }
+      const existingId = records[index]?.[this.resource.idField];
 
       const nextRecord = {
         ...records[index],
         ...patch,
-        [this.resource.idField]: id,
+        [this.resource.idField]: existingId,
       };
       records[index] = this.config.defaults?.applyOnCreate === false
         ? nextRecord
@@ -171,11 +164,15 @@ export class JsonDbCollection {
   async delete(id) {
     return withJsonStateWrite(this.path, async () => {
       const records = await this.all();
-      const nextRecords = records.filter((record) => record?.[this.resource.idField] !== id);
+      const nextRecords = records.filter((record) => !idMatches(record?.[this.resource.idField], id));
       await writeJsonState(this.path, nextRecords);
       return nextRecords.length !== records.length;
     });
   }
+}
+
+function idMatches(left, right) {
+  return left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 }
 
 export class JsonDbDocument {
@@ -230,6 +227,23 @@ export class JsonDbDocument {
       return nextDocument;
     });
   }
+}
+
+function nextCollectionId(records, idField) {
+  const usedIds = new Set(records
+    .map((record) => record?.[idField])
+    .filter((id) => id !== undefined && id !== null && id !== '')
+    .map((id) => String(id)));
+  const numericIds = [...usedIds]
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  let next = numericIds.length > 0 ? Math.max(...numericIds) + 1 : records.length + 1;
+
+  while (usedIds.has(String(next))) {
+    next += 1;
+  }
+
+  return String(next);
 }
 
 function getPointer(document, pointer) {

@@ -248,6 +248,150 @@ test('CSV fixtures infer schema and refresh runtime state when the source hash c
   assert.match(metadata.resources.users.hash, /^[a-f0-9]{64}$/);
 });
 
+test('JSON fixture hashes refresh mirror state only when the source file changes', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+    },
+    {
+      name: 'Grace Hopper',
+      email: 'grace@example.com',
+    },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const firstSync = await syncJsonFixtureDb(config);
+  const statePath = path.join(cwd, '.jsondb/state/users.json');
+  const metadataPath = path.join(cwd, '.jsondb/state/.sources.json');
+
+  assert.equal(firstSync.schema.resources.users.fields.id.type, 'string');
+  assert.equal(firstSync.schema.resources.users.fields.id.required, true);
+  assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), [
+    {
+      id: '1',
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+    },
+    {
+      id: '2',
+      name: 'Grace Hopper',
+      email: 'grace@example.com',
+    },
+  ]);
+  assert.doesNotMatch(await readFile(path.join(cwd, 'db/users.json'), 'utf8'), /"id"/);
+
+  await writeFile(statePath, `${JSON.stringify([{ id: 'runtime_edit', name: 'Runtime Edit' }], null, 2)}\n`);
+  await syncJsonFixtureDb(config);
+  assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), [
+    {
+      id: 'runtime_edit',
+      name: 'Runtime Edit',
+    },
+  ]);
+
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      name: 'Linus Torvalds',
+      email: 'linus@example.com',
+    },
+  ]));
+  await syncJsonFixtureDb(config);
+
+  assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), [
+    {
+      id: '1',
+      name: 'Linus Torvalds',
+      email: 'linus@example.com',
+    },
+  ]);
+
+  const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+  assert.equal(metadata.resources.users.format, 'json');
+  assert.equal(metadata.resources.users.path, 'db/users.json');
+  assert.match(metadata.resources.users.hash, /^[a-f0-9]{64}$/);
+});
+
+test('non-mirror sync writes generated ids back to JSON fixtures', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    sourceDir: './db',
+    stateDir: './.jsondb',
+    mode: 'source'
+  };`);
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      name: 'Ada Lovelace'
+    },
+    {
+      id: '10',
+      name: 'Grace Hopper'
+    },
+    {
+      name: 'Katherine Johnson'
+    }
+  ]));
+
+  const config = await loadConfig({ cwd });
+  await syncJsonFixtureDb(config);
+
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, 'db/users.json'), 'utf8')), [
+    {
+      id: '11',
+      name: 'Ada Lovelace',
+    },
+    {
+      id: '10',
+      name: 'Grace Hopper',
+    },
+    {
+      id: '12',
+      name: 'Katherine Johnson',
+    },
+  ]);
+});
+
+test('package create assigns a counter id when the body omits id', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [
+      { "id": "1", "name": "Ada Lovelace" }
+    ]
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const user = await db.collection('users').create({
+    name: 'Grace Hopper',
+  });
+
+  assert.deepEqual(user, {
+    id: '2',
+    name: 'Grace Hopper',
+  });
+});
+
+test('source load errors report the file and keep other resources available when allowed', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await writeFixture(cwd, 'broken.json', '{"id": ');
+
+  const config = await loadConfig({ cwd });
+  const project = await syncJsonFixtureDb(config, { allowErrors: true });
+
+  assert.deepEqual(Object.keys(project.schema.resources), ['users']);
+  assert.equal(project.diagnostics[0].code, 'SOURCE_LOAD_FAILED');
+  assert.equal(project.diagnostics[0].file, 'db/broken.json');
+  assert.match(project.diagnostics[0].message, /Could not load db\/broken\.json/);
+  assert.match(await readFile(path.join(cwd, '.jsondb/schema.generated.json'), 'utf8'), /SOURCE_LOAD_FAILED/);
+});
+
 test('types.commitOutFile writes a committed type copy', async () => {
   const cwd = await makeProject();
   await writeConfig(cwd, `export default {

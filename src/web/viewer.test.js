@@ -15,6 +15,7 @@ test('web viewer renders the jsondb tool surface', () => {
   assert.match(html, /GraphQL Runner/);
   assert.match(html, /Generated Schema/);
   assert.match(html, /\/__jsondb\/schema/);
+  assert.match(html, /\/__jsondb\/events/);
   assert.match(html, /inline-flex min-h-10 items-center justify-center gap-2 rounded-md border/);
   assert.match(html, /px-3 py-2/);
   assert.match(html, /Batch requests run sequentially/);
@@ -22,6 +23,7 @@ test('web viewer renders the jsondb tool surface', () => {
   assert.match(html, /const BUTTON_CLASS =/);
   assert.match(html, /Import CSV/);
   assert.match(html, /id="csv-drop"/);
+  assert.match(html, /id="diagnostics-view"/);
   assert.match(html, /\/__jsondb\/import/);
   assert.match(html, /x-jsondb-file-name/);
 });
@@ -39,5 +41,8 @@ test('web viewer local CSS does not override Tailwind layout utilities', () => {
   assert.match(html, /localStorage\.setItem\('jsondb:selectedResource'/);
   assert.match(html, /localStorage\.removeItem\('jsondb:selectedResource'\)/);
   assert.match(html, /url\.searchParams\.delete\('resource'\)/);
+  assert.match(html, /await loadSelectedData\(\);\n      renderRestExamples\(\);\n      renderGraphqlExamples\(\);/);
+  assert.match(html, /function nextRecordId\(resource\)/);
+  assert.match(html, /new EventSource\('\/__jsondb\/events'\)/);
   assert.doesNotMatch(html, /class="(?:app|layout|toolbar|tabs|tab|viewer-grid|panel|panel-head|panel-body|stack|row|muted|code|table-wrap|example|example-head|resource-button|is-hidden)"/);
 });

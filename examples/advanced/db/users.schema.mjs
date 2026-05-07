@@ -20,6 +20,9 @@ export default collection({
       default: 'user',
       description: 'Local authorization role.',
     }),
+    twitterHandle: field.string({
+      description: 'Optional social handle used by local profile demos.',
+    }),
     profile: field.object({
       title: field.string({ default: 'Contributor' }),
       location: field.string({ default: 'Remote' }),

@@ -21,7 +21,13 @@
     },
     "metadata": {
       "type": "object",
-      "default": {}
+      "default": {},
+      "fields": {
+        "priority": {
+          "type": "string",
+          "default": "normal"
+        }
+      }
     }
   },
   "seed": [

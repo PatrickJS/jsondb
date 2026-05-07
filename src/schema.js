@@ -47,15 +47,37 @@ export async function loadProjectSchema(config) {
   for (const name of resourceNames) {
     const dataPath = dataFiles.get(name);
     const schemaPath = schemaFiles.get(name);
-    const rawDataSource = dataPath ? await loadDataFile(dataPath) : undefined;
+    let rawDataSource;
+    let rawSchema;
+
+    if (dataPath) {
+      try {
+        rawDataSource = await loadDataFile(dataPath);
+      } catch (error) {
+        diagnostics.push(sourceLoadDiagnostic(error, dataPath, name, config));
+      }
+    }
+
     const rawData = rawDataSource?.data;
-    const rawSchema = schemaPath ? await loadSchemaFile(schemaPath) : undefined;
+
+    if (schemaPath) {
+      try {
+        rawSchema = await loadSchemaFile(schemaPath);
+      } catch (error) {
+        diagnostics.push(sourceLoadDiagnostic(error, schemaPath, name, config));
+      }
+    }
+
+    if (rawData === undefined && rawSchema === undefined) {
+      continue;
+    }
+
     const resource = buildResource({
       name,
-      dataPath,
+      dataPath: rawDataSource ? dataPath : undefined,
       dataFormat: rawDataSource?.format,
       dataHash: rawDataSource?.hash,
-      schemaPath,
+      schemaPath: rawSchema ? schemaPath : undefined,
       rawData,
       rawSchema,
       config,
@@ -429,41 +451,56 @@ function isPlainRecord(value) {
 function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, rawData, rawSchema, config }) {
   if (rawSchema) {
     const kind = rawSchema.kind ?? inferKindFromData(rawData) ?? 'collection';
+    const idField = rawSchema.idField ?? config.collections?.[name]?.idField ?? 'id';
     const schemaSeed = rawSchema.seed ?? emptySeedForKind(kind);
     const seed = rawData !== undefined ? rawData : schemaSeed;
-    const fields = Object.fromEntries(
+    let fields = Object.fromEntries(
       Object.entries(rawSchema.fields ?? {}).map(([fieldName, field]) => [fieldName, normalizeField(field, fieldName)]),
     );
+    if (kind === 'collection') {
+      fields = ensureCollectionIdField(fields, idField);
+    }
+    const normalizedSeed = normalizeSeed(seed, kind);
+    const idResult = ensureCollectionSeedIds(normalizedSeed, kind, idField);
 
     return withComputedMetadata({
       name,
       kind,
-      idField: rawSchema.idField ?? config.collections?.[name]?.idField ?? 'id',
+      idField,
       description: rawSchema.description,
       fields,
-      seed: normalizeSeed(seed, kind),
+      seed: idResult.seed,
       dataPath,
       dataFormat,
       dataHash,
       schemaPath,
       schemaSource: schemaPath?.endsWith('.mjs') ? 'mjs' : 'jsonc',
       typeSource: 'schema',
+      generatedIds: idResult.generated,
     });
   }
 
   const kind = inferKindFromData(rawData);
+  const idField = config.collections?.[name]?.idField ?? inferIdField(rawData, kind);
+  const normalizedSeed = normalizeSeed(rawData, kind);
+  const idResult = ensureCollectionSeedIds(normalizedSeed, kind, idField);
+  const fields = kind === 'collection'
+    ? ensureCollectionIdField(inferFieldsFromData(idResult.seed, kind), idField)
+    : inferFieldsFromData(idResult.seed, kind);
+
   return withComputedMetadata({
     name,
     kind,
-    idField: config.collections?.[name]?.idField ?? inferIdField(rawData, kind),
-    fields: inferFieldsFromData(rawData, kind),
-    seed: normalizeSeed(rawData, kind),
+    idField,
+    fields,
+    seed: idResult.seed,
     dataPath,
     dataFormat,
     dataHash,
     schemaPath,
     schemaSource: null,
     typeSource: 'data',
+    generatedIds: idResult.generated,
   });
 }
 
@@ -547,6 +584,72 @@ function inferIdField(data, kind) {
 
   const firstRecord = data.find((record) => record && typeof record === 'object' && !Array.isArray(record));
   return Object.keys(firstRecord ?? {}).find((fieldName) => /id$/i.test(fieldName)) ?? 'id';
+}
+
+function ensureCollectionIdField(fields, idField) {
+  if (idField in fields) {
+    return fields;
+  }
+
+  return {
+    [idField]: {
+      type: 'string',
+      required: true,
+      description: 'Generated local id.',
+    },
+    ...fields,
+  };
+}
+
+function ensureCollectionSeedIds(seed, kind, idField) {
+  if (kind !== 'collection' || !Array.isArray(seed)) {
+    return {
+      seed,
+      generated: false,
+    };
+  }
+
+  const usedIds = new Set(seed
+    .map((record) => record?.[idField])
+    .filter((id) => id !== undefined && id !== null && id !== '')
+    .map((id) => String(id)));
+  let nextId = nextCounterId(usedIds);
+  let generated = false;
+
+  const records = seed.map((record) => {
+    if (!isPlainRecord(record) || (record[idField] !== undefined && record[idField] !== null && record[idField] !== '')) {
+      return record;
+    }
+
+    generated = true;
+    while (usedIds.has(String(nextId))) {
+      nextId += 1;
+    }
+    const id = String(nextId);
+    usedIds.add(id);
+    nextId += 1;
+    return {
+      [idField]: id,
+      ...record,
+    };
+  });
+
+  return {
+    seed: records,
+    generated,
+  };
+}
+
+function nextCounterId(usedIds) {
+  const numericIds = [...usedIds]
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+
+  if (numericIds.length > 0) {
+    return Math.max(...numericIds) + 1;
+  }
+
+  return 1;
 }
 
 function normalizeSeed(seed, kind) {
@@ -637,6 +740,24 @@ function serializeResource(resource) {
       dataFormat: resource.dataFormat,
       dataHash: resource.dataHash,
       schemaPath: resource.schemaPath,
+      generatedIds: resource.generatedIds,
+    },
+  };
+}
+
+function sourceLoadDiagnostic(error, filePath, resource, config) {
+  const relativePath = path.relative(config.cwd, filePath);
+  return {
+    code: 'SOURCE_LOAD_FAILED',
+    severity: 'error',
+    resource,
+    file: relativePath,
+    message: `Could not load ${relativePath}: ${error.message}`,
+    hint: error.hint ?? 'Fix this source file and jsondb will reload the rest of the project.',
+    details: {
+      path: relativePath,
+      parserMessage: error.message,
+      code: error.code,
     },
   };
 }

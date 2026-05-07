@@ -7,7 +7,7 @@ test('examples launcher can discover repo examples and render an index page', as
   const examples = await findExamples(path.resolve('examples'));
   const names = examples.map((example) => example.name);
 
-  assert.deepEqual(names, ['advanced', 'basic', 'csv', 'data-first', 'schema-first']);
+  assert.deepEqual(names, ['advanced', 'basic', 'csv', 'data-first', 'diagnostics', 'schema-first']);
 
   const html = renderExamplesIndex(examples.map((example, index) => ({
     ...example,
@@ -20,5 +20,6 @@ test('examples launcher can discover repo examples and render an index page', as
   assert.match(html, /Open viewer/);
   assert.match(html, /advanced/);
   assert.match(html, /csv/);
+  assert.match(html, /diagnostics/);
   assert.match(html, /schema-first/);
 });

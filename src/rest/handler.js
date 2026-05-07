@@ -36,7 +36,7 @@ async function handleRestRequestUnsafe(db, request, response, url) {
   }
 
   if (request.method === 'GET' && url.pathname === '/__jsondb/schema') {
-    sendJson(response, 200, makeGeneratedSchema([...db.resources.values()]));
+    sendJson(response, 200, makeGeneratedSchema([...db.resources.values()], db.diagnostics ?? []));
     return;
   }
 
@@ -177,8 +177,10 @@ async function importCsvFixture(db, request) {
   const outFile = path.join(db.config.sourceDir, filename);
   await writeFile(outFile, body);
 
-  const project = await syncJsonFixtureDb(db.config);
+  const project = await syncJsonFixtureDb(db.config, { allowErrors: true });
   db.resources = new Map(project.resources.map((resource) => [resource.name, resource]));
+  db.diagnostics = project.diagnostics;
+  db.schemaVersion = Date.now();
 
   const resourceName = filename.replace(/\.csv$/i, '');
   const resource = db.resources.get(resourceName);

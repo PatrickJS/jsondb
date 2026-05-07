@@ -63,6 +63,7 @@ export function renderJsonDbViewer(options = {}) {
         </div>
       </aside>
       <main class="min-w-0 overflow-auto p-5">
+        <div id="diagnostics-view" class="mb-4 hidden"></div>
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 id="resource-title" class="text-base font-bold tracking-normal text-slate-950">Select a resource</h2>
@@ -230,6 +231,7 @@ export function renderJsonDbViewer(options = {}) {
       loadSdl: document.getElementById('load-sdl'),
       fieldView: document.getElementById('field-view'),
       schemaOutput: document.getElementById('schema-output'),
+      diagnosticsView: document.getElementById('diagnostics-view'),
       csvDrop: document.getElementById('csv-drop'),
       csvPick: document.getElementById('csv-pick'),
       csvFile: document.getElementById('csv-file'),
@@ -281,6 +283,7 @@ export function renderJsonDbViewer(options = {}) {
     });
 
     boot().catch(showFatal);
+    connectLiveReload();
 
     async function boot(preferredResourceName) {
       state.schema = await fetchJson('/__jsondb/schema');
@@ -289,6 +292,7 @@ export function renderJsonDbViewer(options = {}) {
         ...resource,
       }));
       renderStatus();
+      renderDiagnostics();
       renderResourceList();
       els.subtitle.textContent = state.resources.length + ' resources loaded';
       const resourceName = resolveInitialResourceName(preferredResourceName);
@@ -310,11 +314,11 @@ export function renderJsonDbViewer(options = {}) {
 
       els.resourceTitle.textContent = state.selected.name;
       els.resourceDetail.textContent = state.selected.kind + ' · ' + state.selected.typeName + routeText(state.selected);
-      renderRestExamples();
-      renderGraphqlExamples();
       renderFields();
       els.schemaOutput.textContent = pretty(state.selected);
       await loadSelectedData();
+      renderRestExamples();
+      renderGraphqlExamples();
     }
 
     async function loadSelectedData() {
@@ -323,6 +327,9 @@ export function renderJsonDbViewer(options = {}) {
       }
 
       const response = await fetch(resourcePath(state.selected));
+      if (!response.ok) {
+        throw new Error('Could not load ' + state.selected.name + ': ' + response.status + ' ' + response.statusText);
+      }
       state.selectedData = await response.json();
       els.jsonOutput.textContent = pretty(state.selectedData);
       renderData();
@@ -340,6 +347,32 @@ export function renderJsonDbViewer(options = {}) {
         pill(errors + ' errors', errors > 0 ? 'error' : ''),
         pill(warnings + ' warnings', warnings > 0 ? 'warning' : ''),
       );
+    }
+
+    function renderDiagnostics() {
+      const diagnostics = state.schema.diagnostics || [];
+      if (diagnostics.length === 0) {
+        els.diagnosticsView.className = 'mb-4 hidden';
+        els.diagnosticsView.innerHTML = '';
+        return;
+      }
+
+      els.diagnosticsView.className = 'mb-4 grid gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm';
+      els.diagnosticsView.innerHTML = '';
+      const heading = document.createElement('div');
+      heading.className = 'font-bold';
+      heading.textContent = 'Source diagnostics';
+      els.diagnosticsView.append(heading);
+
+      for (const diagnostic of diagnostics) {
+        const item = document.createElement('div');
+        item.className = diagnostic.severity === 'error'
+          ? 'rounded-md border border-red-200 bg-white p-3 text-red-900'
+          : 'rounded-md border border-amber-200 bg-white p-3 text-amber-900';
+        const fileText = diagnostic.file ? diagnostic.file + ': ' : '';
+        item.textContent = fileText + diagnostic.message + (diagnostic.hint ? ' ' + diagnostic.hint : '');
+        els.diagnosticsView.append(item);
+      }
     }
 
     function renderResourceList() {
@@ -484,7 +517,7 @@ export function renderJsonDbViewer(options = {}) {
       return [
         { name: 'List records', method: 'GET', path },
         { name: 'Read record', method: 'GET', path: path + '/' + encodeURIComponent(id) },
-        { name: 'Create record', method: 'POST', path, body: sampleRecord(resource) },
+        { name: 'Create record', method: 'POST', path, body: sampleRecord(resource, { id: nextRecordId(resource) }) },
         { name: 'Patch record', method: 'PATCH', path: path + '/' + encodeURIComponent(id), body: samplePatch(resource) },
         { name: 'Delete record', method: 'DELETE', path: path + '/' + encodeURIComponent(id) },
         { name: 'Batch list and schema', method: 'POST', path: '/__jsondb/batch', body: [{ method: 'GET', path }, { method: 'GET', path: '/__jsondb/schema' }] },
@@ -505,16 +538,18 @@ export function renderJsonDbViewer(options = {}) {
       return [
         { name: 'List records', query: '{\\n  ' + resource.name + ' {\\n' + fields + '\\n  }\\n}' },
         { name: 'Read record', query: 'query Get' + resource.typeName + '($id: ID!) {\\n  ' + singular + '(id: $id) {\\n' + fields + '\\n  }\\n}', variables: { id: sampleId(resource) } },
-        { name: 'Create record', query: 'mutation Create' + resource.typeName + '($input: JSON!) {\\n  create' + resource.typeName + '(input: $input) {\\n' + fields + '\\n  }\\n}', variables: { input: sampleRecord(resource) } },
+        { name: 'Create record', query: 'mutation Create' + resource.typeName + '($input: JSON!) {\\n  create' + resource.typeName + '(input: $input) {\\n' + fields + '\\n  }\\n}', variables: { input: sampleRecord(resource, { id: nextRecordId(resource) }) } },
         { name: 'Patch record', query: 'mutation {\\n  update' + resource.typeName + '(id: "' + sampleId(resource) + '", patch: ' + inlineObject(samplePatch(resource)) + ') {\\n' + fields + '\\n  }\\n}' },
         { name: 'Delete record', query: 'mutation {\\n  delete' + resource.typeName + '(id: "' + sampleId(resource) + '")\\n}' },
       ];
     }
 
-    function sampleRecord(resource) {
+    function sampleRecord(resource, options = {}) {
       const record = {};
       for (const [name, field] of Object.entries(resource.fields || {})) {
-        record[name] = sampleValue(name, field, resource);
+        record[name] = name === resource.idField && options.id !== undefined
+          ? options.id
+          : sampleValue(name, field, resource);
       }
       return record;
     }
@@ -573,6 +608,29 @@ export function renderJsonDbViewer(options = {}) {
         return data[0][resource.idField];
       }
       return resource.name + '_1';
+    }
+
+    function nextRecordId(resource) {
+      const data = state.selected?.name === resource.name && Array.isArray(state.selectedData)
+        ? state.selectedData
+        : [];
+      const ids = data
+        .map((record) => record?.[resource.idField])
+        .filter((id) => id !== undefined && id !== null && id !== '')
+        .map((id) => String(id));
+      const sample = ids[0];
+      const match = sample?.match(/^(.*?)(\\d+)$/);
+
+      if (match) {
+        const prefix = match[1];
+        const next = ids.reduce((max, id) => {
+          const current = id.match(/^(.*?)(\\d+)$/);
+          return current && current[1] === prefix ? Math.max(max, Number(current[2])) : max;
+        }, Number(match[2])) + 1;
+        return prefix + next;
+      }
+
+      return String(ids.length + 1);
     }
 
     function selectionFields(resource) {
@@ -647,6 +705,26 @@ export function renderJsonDbViewer(options = {}) {
         url.searchParams.delete('resource');
         window.history.replaceState({}, '', url);
       }
+    }
+
+    function connectLiveReload() {
+      if (!window.EventSource) {
+        return;
+      }
+
+      const events = new EventSource('/__jsondb/events');
+      events.addEventListener('jsondb', (event) => {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'connected') {
+          return;
+        }
+
+        const selectedName = state.selected?.name;
+        els.subtitle.textContent = payload.type === 'synced-with-errors'
+          ? 'Files changed; reloaded with source errors'
+          : 'Files changed; reloaded';
+        boot(selectedName).catch(showFatal);
+      });
     }
 
     async function importCsvFile(file) {

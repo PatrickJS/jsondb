@@ -10,7 +10,7 @@ Core responsibilities:
 - Load schema sources from `db/*.schema.jsonc` and `db/*.schema.mjs`.
 - Infer schemas from data-first fixtures.
 - Generate TypeScript types.
-- Sync a writable runtime mirror into `.jsondb/state`.
+- Sync a writable runtime mirror into `.jsondb/state`, using source hashes for JSON/JSONC/CSV refreshes.
 - Expose a package API, CLI, and small local REST server.
 
 Important files:
@@ -80,6 +80,8 @@ If a smoke command writes `.jsondb/` inside `examples/basic`, remove those gener
 - Default local behavior for unknown fields is warning, with strict mode available through `schema.unknownFields: 'error'`.
 - Defaults should apply on create and safe additive mirror sync unless config disables them.
 - Field `description` values should feed generated TypeScript JSDoc and GraphQL SDL descriptions.
+- Collection fixtures without `id` should receive counter ids in the runtime mirror. Default mirror mode must not rewrite source files; `mode: 'source'` may write generated ids back to plain `.json` fixtures.
+- `jsondb serve` watches `db/` for source changes, ignores `.jsondb/`, reloads valid resources, and surfaces file-specific diagnostics in the viewer without breaking unrelated resources.
 
 ## Testing Guidance
 

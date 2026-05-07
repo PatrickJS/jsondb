@@ -28,6 +28,17 @@ Generated files:
 .jsondb/state/users.json
 ```
 
+Collections always get an id field. If a JSON/JSONC/CSV collection fixture omits `id`, jsondb adds counter ids in the runtime mirror:
+
+```json
+[
+  { "id": "1", "name": "Ada Lovelace" },
+  { "id": "2", "name": "Grace Hopper" }
+]
+```
+
+In default `mode: 'mirror'`, source files stay unchanged. In `mode: 'source'`, jsondb writes generated ids back to plain `.json` fixtures.
+
 ## Schema-First Fixtures
 
 ```jsonc
@@ -88,7 +99,7 @@ u_1,Ada Lovelace,ada@example.com,true
 .jsondb/state/users.json
 ```
 
-The CSV source hash is tracked in `.jsondb/state/.sources.json`. If the CSV file changes, the runtime JSON mirror is regenerated from the CSV. If the CSV file has not changed, runtime edits are preserved.
+Source hashes for JSON, JSONC, and CSV fixtures are tracked in `.jsondb/state/.sources.json`. If a source fixture changes, the runtime JSON mirror is regenerated from the source. If the source file has not changed, runtime edits are preserved.
 
 ## CLI
 
@@ -127,6 +138,9 @@ The viewer includes:
 - GraphQL SDL, query examples, and mutation examples
 - a GraphQL runner with variables
 - schema and field inspection
+- source diagnostics when one fixture file is broken
+
+While `jsondb serve` is running, jsondb watches `db/` for source changes, refreshes the runtime mirror, and notifies the viewer through `/__jsondb/events`. The viewer reloads automatically. If one source file is invalid, the viewer shows the file-specific error while the other valid resources keep working.
 
 ## REST And GraphQL
 

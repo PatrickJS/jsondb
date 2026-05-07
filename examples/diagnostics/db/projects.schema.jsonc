@@ -1,0 +1,27 @@
+{
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true
+    },
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "metadata": {
+      "type": "object",
+      "default": {}
+    }
+  },
+  "seed": [
+    {
+      "id": "proj_1",
+      "name": "Diagnostics demo",
+      "metadata": {
+        "priority": "high"
+      }
+    }
+  ]
+}
