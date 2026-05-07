@@ -1,0 +1,36 @@
+{
+  "name": "json-fixture-db",
+  "version": "0.1.0",
+  "description": "A local JSON fixture database with schema inference, generated TypeScript types, and a small runtime API.",
+  "type": "module",
+  "bin": {
+    "jsondb": "./src/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./schema": {
+      "types": "./src/schema.d.ts",
+      "default": "./src/schema-builders.js"
+    }
+  },
+  "files": [
+    "src",
+    "examples/basic/README.md",
+    "examples/basic/db",
+    "examples/basic/jsondb.config.mjs",
+    "examples/basic/src/generated",
+    "README.md",
+    "SPEC.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "jsondb": "node ./src/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
