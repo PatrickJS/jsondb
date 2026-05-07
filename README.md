@@ -69,6 +69,27 @@ export default collection({
 
 Schema-backed fixtures are validated against declared field types. Required fields, primitive types, enum values, arrays, and nested objects are checked during `sync` and during package, REST, and GraphQL writes.
 
+## CSV Fixtures
+
+CSV files can be used as data-first collection fixtures:
+
+```txt
+db/users.csv
+```
+
+```csv
+id,name,email,active
+u_1,Ada Lovelace,ada@example.com,true
+```
+
+`jsondb sync` parses the header row, infers a collection schema, and writes the runtime JSON mirror:
+
+```txt
+.jsondb/state/users.json
+```
+
+The CSV source hash is tracked in `.jsondb/state/.sources.json`. If the CSV file changes, the runtime JSON mirror is regenerated from the CSV. If the CSV file has not changed, runtime edits are preserved.
+
 ## CLI
 
 ```bash
@@ -100,6 +121,7 @@ http://127.0.0.1:7331/__jsondb
 The viewer includes:
 
 - resource and data browsing
+- drag-and-drop CSV import into `db/`
 - REST specs with copyable examples
 - a REST request runner
 - GraphQL SDL, query examples, and mutation examples

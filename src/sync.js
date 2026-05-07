@@ -33,9 +33,14 @@ export async function syncJsonFixtureDb(config, options = {}) {
     }
   }
 
+  const sourceMetadataPath = path.join(config.stateDir, 'state', '.sources.json');
+  const sourceMetadata = await readJsonState(sourceMetadataPath, { resources: {} });
+  sourceMetadata.resources ??= {};
+
   for (const resource of project.resources) {
-    await syncStateResource(config, resource);
+    await syncStateResource(config, resource, sourceMetadata);
   }
+  await writeJsonState(sourceMetadataPath, sourceMetadata);
 
   logs.push('Synced runtime mirror');
 
@@ -53,18 +58,38 @@ async function ensureRuntimeDirs(config) {
   await mkdir(path.join(config.stateDir, 'types'), { recursive: true });
 }
 
-async function syncStateResource(config, resource) {
+async function syncStateResource(config, resource, sourceMetadata) {
   const statePath = statePathForResource(config, resource.name);
   const existing = await readJsonState(statePath, undefined);
+  const metadata = sourceMetadata.resources[resource.name];
+  const csvSourceChanged = resource.dataFormat === 'csv'
+    && resource.dataHash
+    && metadata?.hash !== resource.dataHash;
 
-  if (existing === undefined) {
+  if (existing === undefined || csvSourceChanged) {
     await writeJsonState(statePath, applyDefaultsToSeed(resource.seed, resource, config));
+    updateSourceMetadata(sourceMetadata, config, resource);
     return;
   }
 
   if (config.defaults?.applyOnSafeMigration !== false) {
     await writeJsonState(statePath, applyDefaultsToSeed(existing, resource, config));
   }
+
+  updateSourceMetadata(sourceMetadata, config, resource);
+}
+
+function updateSourceMetadata(sourceMetadata, config, resource) {
+  if (resource.dataFormat !== 'csv' || !resource.dataHash) {
+    return;
+  }
+
+  sourceMetadata.resources[resource.name] = {
+    path: path.relative(config.cwd, resource.dataPath),
+    format: resource.dataFormat,
+    hash: resource.dataHash,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export function applyDefaultsToSeed(seed, resource, config) {

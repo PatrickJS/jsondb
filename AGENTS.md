@@ -6,7 +6,7 @@ This repo is a dependency-light Node.js ESM package named `json-fixture-db`.
 
 Core responsibilities:
 
-- Load fixture data from `db/*.json` and `db/*.jsonc`.
+- Load fixture data from `db/*.json`, `db/*.jsonc`, and `db/*.csv`.
 - Load schema sources from `db/*.schema.jsonc` and `db/*.schema.mjs`.
 - Infer schemas from data-first fixtures.
 - Generate TypeScript types.
@@ -74,7 +74,7 @@ If a smoke command writes `.jsondb/` inside `examples/basic`, remove those gener
 
 - Keep the package ESM and dependency-light. Prefer Node standard library APIs unless a feature clearly needs a dependency.
 - Preserve support for Node.js 20 and newer.
-- Keep schema source support focused on `.json`, `.jsonc`, `.schema.jsonc`, and `.schema.mjs`.
+- Keep schema source support focused on `.json`, `.jsonc`, `.csv`, `.schema.jsonc`, and `.schema.mjs`.
 - Do not add TypeScript schema execution in v1 without adding an explicit loader/build story.
 - Schema files are authoritative in mixed mode; data files provide seed records.
 - Default local behavior for unknown fields is warning, with strict mode available through `schema.unknownFields: 'error'`.

@@ -26,6 +26,8 @@ export function renderJsonDbViewer(options = {}) {
   const pillClass = 'inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600';
   const warningPillClass = 'inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700';
   const errorPillClass = 'inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700';
+  const importDropClass = 'mt-4 rounded-lg border-2 border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600 shadow-sm transition';
+  const importDropActiveClass = 'mt-4 rounded-lg border-2 border-dashed border-emerald-500 bg-emerald-50 p-4 text-sm text-emerald-800 shadow-sm transition';
 
   return `<!doctype html>
 <html lang="en">
@@ -52,6 +54,13 @@ export function renderJsonDbViewer(options = {}) {
           <button type="button" id="refresh" class="${buttonClass}">Refresh</button>
         </div>
         <div id="resource-list" class="grid gap-2"></div>
+        <div id="csv-drop" class="${importDropClass}">
+          <div class="font-semibold text-slate-800">Import CSV</div>
+          <p class="mb-3 mt-1 text-xs text-slate-500">Drop a CSV file here to copy it into db/, sync the mirror, and open the new resource.</p>
+          <button type="button" id="csv-pick" class="${buttonClass}">Choose CSV</button>
+          <input id="csv-file" type="file" accept=".csv,text/csv" class="hidden">
+          <div id="csv-import-status" class="mt-3 text-xs text-slate-500"></div>
+        </div>
       </aside>
       <main class="min-w-0 overflow-auto p-5">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -181,6 +190,8 @@ export function renderJsonDbViewer(options = {}) {
     const PILL_CLASS = ${JSON.stringify(pillClass)};
     const WARNING_PILL_CLASS = ${JSON.stringify(warningPillClass)};
     const ERROR_PILL_CLASS = ${JSON.stringify(errorPillClass)};
+    const IMPORT_DROP_CLASS = ${JSON.stringify(importDropClass)};
+    const IMPORT_DROP_ACTIVE_CLASS = ${JSON.stringify(importDropActiveClass)};
     const CODE_CLASS = ${JSON.stringify(codeClass)};
     const MUTED_CLASS = ${JSON.stringify(mutedClass)};
     const TABLE_WRAP_CLASS = ${JSON.stringify(tableWrapClass)};
@@ -219,6 +230,10 @@ export function renderJsonDbViewer(options = {}) {
       loadSdl: document.getElementById('load-sdl'),
       fieldView: document.getElementById('field-view'),
       schemaOutput: document.getElementById('schema-output'),
+      csvDrop: document.getElementById('csv-drop'),
+      csvPick: document.getElementById('csv-pick'),
+      csvFile: document.getElementById('csv-file'),
+      csvImportStatus: document.getElementById('csv-import-status'),
     };
 
     document.addEventListener('click', async (event) => {
@@ -247,10 +262,27 @@ export function renderJsonDbViewer(options = {}) {
     document.getElementById('run-rest').addEventListener('click', runRest);
     document.getElementById('run-graphql').addEventListener('click', runGraphql);
     els.loadSdl.addEventListener('click', loadGraphqlSdl);
+    els.csvPick.addEventListener('click', () => els.csvFile.click());
+    els.csvFile.addEventListener('change', () => importCsvFile(els.csvFile.files[0]));
+    for (const eventName of ['dragenter', 'dragover']) {
+      els.csvDrop.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        els.csvDrop.className = IMPORT_DROP_ACTIVE_CLASS;
+      });
+    }
+    for (const eventName of ['dragleave', 'drop']) {
+      els.csvDrop.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        els.csvDrop.className = IMPORT_DROP_CLASS;
+      });
+    }
+    els.csvDrop.addEventListener('drop', (event) => {
+      importCsvFile(event.dataTransfer?.files?.[0]);
+    });
 
     boot().catch(showFatal);
 
-    async function boot() {
+    async function boot(preferredResourceName) {
       state.schema = await fetchJson('/__jsondb/schema');
       state.resources = Object.entries(state.schema.resources || {}).map(([name, resource]) => ({
         name,
@@ -259,8 +291,9 @@ export function renderJsonDbViewer(options = {}) {
       renderStatus();
       renderResourceList();
       els.subtitle.textContent = state.resources.length + ' resources loaded';
-      if (state.resources.length > 0) {
-        await selectResource(state.selected?.name || state.resources[0].name);
+      const resourceName = resolveInitialResourceName(preferredResourceName);
+      if (resourceName) {
+        await selectResource(resourceName);
       }
     }
 
@@ -269,6 +302,7 @@ export function renderJsonDbViewer(options = {}) {
       if (!state.selected) {
         return;
       }
+      rememberResource(name);
 
       document.querySelectorAll('[data-resource]').forEach((button) => {
         button.className = button.dataset.resource === name ? ACTIVE_RESOURCE_BUTTON_CLASS : RESOURCE_BUTTON_CLASS;
@@ -563,6 +597,100 @@ export function renderJsonDbViewer(options = {}) {
         lines.push('', pretty(example.body));
       }
       return lines.join('\\n');
+    }
+
+    function resolveInitialResourceName(preferredResourceName) {
+      if (preferredResourceName && hasResource(preferredResourceName)) {
+        return preferredResourceName;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const queryResource = params.get('resource');
+      if (queryResource) {
+        if (hasResource(queryResource)) {
+          return queryResource;
+        }
+        clearRememberedResource(true);
+        return state.resources[0]?.name;
+      }
+
+      const storedResource = localStorage.getItem('jsondb:selectedResource');
+      if (storedResource) {
+        if (hasResource(storedResource)) {
+          return storedResource;
+        }
+        clearRememberedResource(false);
+      }
+
+      if (state.selected?.name && hasResource(state.selected.name)) {
+        return state.selected.name;
+      }
+
+      return state.resources[0]?.name;
+    }
+
+    function hasResource(name) {
+      return state.resources.some((resource) => resource.name === name);
+    }
+
+    function rememberResource(name) {
+      localStorage.setItem('jsondb:selectedResource', name);
+      const url = new URL(window.location.href);
+      url.searchParams.set('resource', name);
+      window.history.replaceState({}, '', url);
+    }
+
+    function clearRememberedResource(clearQuery) {
+      localStorage.removeItem('jsondb:selectedResource');
+      if (clearQuery) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('resource');
+        window.history.replaceState({}, '', url);
+      }
+    }
+
+    async function importCsvFile(file) {
+      if (!file) {
+        return;
+      }
+
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+        setImportStatus('Choose a .csv file.', 'error');
+        return;
+      }
+
+      setImportStatus('Importing ' + file.name + '...', 'loading');
+      try {
+        const response = await fetch('/__jsondb/import', {
+          method: 'POST',
+          headers: {
+            'content-type': 'text/csv; charset=utf-8',
+            'x-jsondb-file-name': file.name,
+          },
+          body: file,
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error?.message || 'CSV import failed.');
+        }
+
+        setImportStatus('Imported ' + result.dataPath + ' and opened ' + result.resource + '.', 'success');
+        await boot(result.resource);
+        showTab('data');
+      } catch (error) {
+        setImportStatus(error.message, 'error');
+      } finally {
+        els.csvFile.value = '';
+      }
+    }
+
+    function setImportStatus(message, kind) {
+      els.csvImportStatus.textContent = message;
+      els.csvImportStatus.className = kind === 'error'
+        ? 'mt-3 text-xs font-medium text-red-700'
+        : kind === 'success'
+          ? 'mt-3 text-xs font-medium text-emerald-700'
+          : 'mt-3 text-xs text-slate-500';
     }
 
     function showTab(name) {

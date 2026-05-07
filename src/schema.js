@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseCsvRecords } from './csv.js';
 import { jsonDbError } from './errors.js';
 import { readText } from './fs-utils.js';
 import { parseJsonc } from './jsonc.js';
@@ -25,7 +27,7 @@ export async function loadProjectSchema(config) {
       continue;
     }
 
-    if (filename.endsWith('.json') || filename.endsWith('.jsonc')) {
+    if (filename.endsWith('.json') || filename.endsWith('.jsonc') || filename.endsWith('.csv')) {
       if (config.schema?.source === 'schema') {
         continue;
       }
@@ -45,11 +47,14 @@ export async function loadProjectSchema(config) {
   for (const name of resourceNames) {
     const dataPath = dataFiles.get(name);
     const schemaPath = schemaFiles.get(name);
-    const rawData = dataPath ? await loadDataFile(dataPath) : undefined;
+    const rawDataSource = dataPath ? await loadDataFile(dataPath) : undefined;
+    const rawData = rawDataSource?.data;
     const rawSchema = schemaPath ? await loadSchemaFile(schemaPath) : undefined;
     const resource = buildResource({
       name,
       dataPath,
+      dataFormat: rawDataSource?.format,
+      dataHash: rawDataSource?.hash,
       schemaPath,
       rawData,
       rawSchema,
@@ -421,7 +426,7 @@ function isPlainRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function buildResource({ name, dataPath, schemaPath, rawData, rawSchema, config }) {
+function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, rawData, rawSchema, config }) {
   if (rawSchema) {
     const kind = rawSchema.kind ?? inferKindFromData(rawData) ?? 'collection';
     const schemaSeed = rawSchema.seed ?? emptySeedForKind(kind);
@@ -438,6 +443,8 @@ function buildResource({ name, dataPath, schemaPath, rawData, rawSchema, config 
       fields,
       seed: normalizeSeed(seed, kind),
       dataPath,
+      dataFormat,
+      dataHash,
       schemaPath,
       schemaSource: schemaPath?.endsWith('.mjs') ? 'mjs' : 'jsonc',
       typeSource: 'schema',
@@ -452,6 +459,8 @@ function buildResource({ name, dataPath, schemaPath, rawData, rawSchema, config 
     fields: inferFieldsFromData(rawData, kind),
     seed: normalizeSeed(rawData, kind),
     dataPath,
+    dataFormat,
+    dataHash,
     schemaPath,
     schemaSource: null,
     typeSource: 'data',
@@ -480,10 +489,28 @@ async function listSourceFiles(sourceDir) {
 
 async function loadDataFile(filePath) {
   const text = await readText(filePath);
-  if (filePath.endsWith('.jsonc')) {
-    return parseJsonc(text, filePath);
+  const hash = createHash('sha256').update(text).digest('hex');
+  if (filePath.endsWith('.csv')) {
+    return {
+      data: parseCsvRecords(text, filePath),
+      format: 'csv',
+      hash,
+    };
   }
-  return JSON.parse(text);
+
+  if (filePath.endsWith('.jsonc')) {
+    return {
+      data: parseJsonc(text, filePath),
+      format: 'jsonc',
+      hash,
+    };
+  }
+
+  return {
+    data: JSON.parse(text),
+    format: 'json',
+    hash,
+  };
 }
 
 async function loadSchemaFile(filePath) {
@@ -498,7 +525,7 @@ async function loadSchemaFile(filePath) {
 }
 
 function dataResourceName(filename) {
-  return filename.replace(/\.jsonc?$/, '');
+  return filename.replace(/\.(jsonc?|csv)$/, '');
 }
 
 function schemaResourceName(filename) {
@@ -607,6 +634,8 @@ function serializeResource(resource) {
     source: {
       typeSource: resource.typeSource,
       dataPath: resource.dataPath,
+      dataFormat: resource.dataFormat,
+      dataHash: resource.dataHash,
       schemaPath: resource.schemaPath,
     },
   };

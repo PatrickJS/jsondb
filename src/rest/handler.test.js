@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
 import { openJsonFixtureDb } from '../index.js';
 import { makeProject, writeFixture } from '../../test/helpers.js';
@@ -79,6 +81,54 @@ test('REST schema endpoint exposes route paths for the viewer', async () => {
 
   assert.equal(response.status, 200);
   assert.equal(response.json().resources.auditEvents.routePath, '/audit-events');
+});
+
+test('REST viewer import endpoint saves CSV fixtures and reloads resources', async () => {
+  const cwd = await makeProject();
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRawRequest('POST', 'User ID,Email,Active\nu_1,ada@example.com,true\n', {
+      'x-jsondb-file-name': 'Uploaded Users.csv',
+    }),
+    response,
+    new URL('http://jsondb.local/__jsondb/import'),
+  );
+
+  assert.equal(response.status, 201);
+  assert.equal(response.json().resource, 'uploadedUsers');
+  assert.equal(response.json().dataPath, 'db/uploadedUsers.csv');
+  assert.equal(db.resourceNames().includes('uploadedUsers'), true);
+  assert.deepEqual(await db.collection('uploadedUsers').all(), [
+    {
+      userId: 'u_1',
+      email: 'ada@example.com',
+      active: true,
+    },
+  ]);
+});
+
+test('REST viewer import endpoint rejects invalid CSV without writing a fixture', async () => {
+  const cwd = await makeProject();
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRawRequest('POST', 'id,name\n"u_1,Ada\n', {
+      'x-jsondb-file-name': 'Bad Upload.csv',
+    }),
+    response,
+    new URL('http://jsondb.local/__jsondb/import'),
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(response.json().error.code, 'CSV_UNTERMINATED_QUOTE');
+  await assert.rejects(access(path.join(cwd, 'db', 'badUpload.csv')), {
+    code: 'ENOENT',
+  });
 });
 
 test('REST handler creates collection records and applies defaults', async () => {
@@ -360,6 +410,18 @@ function makeRequest(method, body) {
     async *[Symbol.asyncIterator]() {
       if (body !== undefined) {
         yield Buffer.from(JSON.stringify(body));
+      }
+    },
+  };
+}
+
+function makeRawRequest(method, body, headers = {}) {
+  return {
+    method,
+    headers,
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) {
+        yield Buffer.from(body);
       }
     },
   };

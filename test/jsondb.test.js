@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
@@ -180,6 +180,72 @@ test('JSONC data-first fixtures can be inferred', async () => {
       billing: false,
     },
   });
+});
+
+test('CSV fixtures infer schema and refresh runtime state when the source hash changes', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.csv', [
+    'id,name,active,score,zip',
+    'u_1,Ada Lovelace,true,10,02139',
+    'u_2,Grace Hopper,false,11.5,10001',
+  ].join('\n'));
+
+  const config = await loadConfig({ cwd });
+  const firstSync = await syncJsonFixtureDb(config);
+  const statePath = path.join(cwd, '.jsondb/state/users.json');
+  const metadataPath = path.join(cwd, '.jsondb/state/.sources.json');
+
+  assert.equal(firstSync.schema.resources.users.kind, 'collection');
+  assert.equal(firstSync.schema.resources.users.idField, 'id');
+  assert.equal(firstSync.schema.resources.users.fields.active.type, 'boolean');
+  assert.equal(firstSync.schema.resources.users.fields.score.type, 'number');
+  assert.equal(firstSync.schema.resources.users.fields.zip.type, 'string');
+  assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), [
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+      active: true,
+      score: 10,
+      zip: '02139',
+    },
+    {
+      id: 'u_2',
+      name: 'Grace Hopper',
+      active: false,
+      score: 11.5,
+      zip: '10001',
+    },
+  ]);
+
+  await writeFile(statePath, `${JSON.stringify([{ id: 'runtime_edit', name: 'Runtime Edit' }], null, 2)}\n`);
+  await syncJsonFixtureDb(config);
+  assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), [
+    {
+      id: 'runtime_edit',
+      name: 'Runtime Edit',
+    },
+  ]);
+
+  await writeFixture(cwd, 'users.csv', [
+    'id,name,active,score,zip',
+    'u_3,Linus Torvalds,true,99,00901',
+  ].join('\n'));
+  await syncJsonFixtureDb(config);
+
+  assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), [
+    {
+      id: 'u_3',
+      name: 'Linus Torvalds',
+      active: true,
+      score: 99,
+      zip: '00901',
+    },
+  ]);
+
+  const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+  assert.equal(metadata.resources.users.format, 'csv');
+  assert.equal(metadata.resources.users.path, 'db/users.csv');
+  assert.match(metadata.resources.users.hash, /^[a-f0-9]{64}$/);
 });
 
 test('types.commitOutFile writes a committed type copy', async () => {

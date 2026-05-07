@@ -20,6 +20,10 @@ test('web viewer renders the jsondb tool surface', () => {
   assert.match(html, /Batch requests run sequentially/);
   assert.match(html, /Earlier successful writes stay committed/);
   assert.match(html, /const BUTTON_CLASS =/);
+  assert.match(html, /Import CSV/);
+  assert.match(html, /id="csv-drop"/);
+  assert.match(html, /\/__jsondb\/import/);
+  assert.match(html, /x-jsondb-file-name/);
 });
 
 test('web viewer local CSS does not override Tailwind layout utilities', () => {
@@ -32,5 +36,8 @@ test('web viewer local CSS does not override Tailwind layout utilities', () => {
   assert.match(html, /data-tab-panel class="hidden"/);
   assert.match(html, /classList\.toggle\('hidden'/);
   assert.match(html, /data-copy-example/);
+  assert.match(html, /localStorage\.setItem\('jsondb:selectedResource'/);
+  assert.match(html, /localStorage\.removeItem\('jsondb:selectedResource'\)/);
+  assert.match(html, /url\.searchParams\.delete\('resource'\)/);
   assert.doesNotMatch(html, /class="(?:app|layout|toolbar|tabs|tab|viewer-grid|panel|panel-head|panel-body|stack|row|muted|code|table-wrap|example|example-head|resource-button|is-hidden)"/);
 });

@@ -1,5 +1,9 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { parseCsvRecords } from '../csv.js';
 import { jsonDbError, listChoices, serializeError } from '../errors.js';
 import { makeGeneratedSchema } from '../schema.js';
+import { syncJsonFixtureDb } from '../sync.js';
 import { renderJsonDbViewer } from '../web/viewer.js';
 
 export async function handleRestRequest(db, request, response, url = new URL(request.url, 'http://jsondb.local')) {
@@ -23,6 +27,11 @@ async function handleRestRequestUnsafe(db, request, response, url) {
       maxBytes: maxBodyBytes(db),
     })));
     sendJson(response, result.status, result.body);
+    return;
+  }
+
+  if (request.method === 'POST' && url.pathname === '/__jsondb/import') {
+    sendJson(response, 201, await importCsvFixture(db, request));
     return;
   }
 
@@ -107,13 +116,14 @@ export async function executeRestBatch(db, body) {
   return results;
 }
 
-export async function readJsonBody(request, options = {}) {
+export async function readRawBody(request, options = {}) {
   const chunks = [];
   const maxBytes = Number(options.maxBytes ?? Infinity);
   let byteLength = 0;
 
   for await (const chunk of request) {
-    byteLength += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    byteLength += buffer.length;
     if (byteLength > maxBytes) {
       throw jsonDbError(
         'JSON_BODY_TOO_LARGE',
@@ -127,10 +137,14 @@ export async function readJsonBody(request, options = {}) {
         },
       );
     }
-    chunks.push(chunk);
+    chunks.push(buffer);
   }
 
-  const text = Buffer.concat(chunks).toString('utf8').trim();
+  return Buffer.concat(chunks);
+}
+
+export async function readJsonBody(request, options = {}) {
+  const text = (await readRawBody(request, options)).toString('utf8').trim();
   try {
     return text ? JSON.parse(text) : {};
   } catch (error) {
@@ -150,6 +164,76 @@ export async function readJsonBody(request, options = {}) {
 
 function maxBodyBytes(db) {
   return Number(db.config.server?.maxBodyBytes ?? 1048576);
+}
+
+async function importCsvFixture(db, request) {
+  const filename = csvFilenameFromRequest(request);
+  const body = await readRawBody(request, {
+    maxBytes: maxBodyBytes(db),
+  });
+  parseCsvRecords(body.toString('utf8'), filename);
+
+  await mkdir(db.config.sourceDir, { recursive: true });
+  const outFile = path.join(db.config.sourceDir, filename);
+  await writeFile(outFile, body);
+
+  const project = await syncJsonFixtureDb(db.config);
+  db.resources = new Map(project.resources.map((resource) => [resource.name, resource]));
+
+  const resourceName = filename.replace(/\.csv$/i, '');
+  const resource = db.resources.get(resourceName);
+
+  return {
+    resource: resourceName,
+    filename,
+    dataPath: path.relative(db.config.cwd, outFile),
+    statePath: path.relative(db.config.cwd, path.join(db.config.stateDir, 'state', `${resourceName}.json`)),
+    routePath: resource?.routePath ?? `/${resourceName}`,
+    viewerPath: `/__jsondb?resource=${encodeURIComponent(resourceName)}`,
+    logs: project.logs,
+  };
+}
+
+function csvFilenameFromRequest(request) {
+  const rawName = headerValue(request, 'x-jsondb-file-name');
+  if (!rawName) {
+    throw jsonDbError(
+      'CSV_IMPORT_MISSING_FILENAME',
+      'CSV import requires an x-jsondb-file-name header.',
+      {
+        status: 400,
+        hint: 'Upload with a filename ending in .csv.',
+      },
+    );
+  }
+
+  if (!String(rawName).toLowerCase().endsWith('.csv')) {
+    throw jsonDbError(
+      'CSV_IMPORT_INVALID_EXTENSION',
+      `CSV import only accepts .csv files: ${rawName}`,
+      {
+        status: 400,
+        hint: 'Choose a CSV file such as users.csv or products.csv.',
+      },
+    );
+  }
+
+  const base = path.basename(String(rawName)).replace(/\.csv$/i, '');
+  const words = base.match(/[A-Za-z0-9]+/g) ?? [];
+  const resourceName = words.map((word, index) => {
+    const lower = word.toLowerCase();
+    return index === 0 ? lower : lower.charAt(0).toUpperCase() + lower.slice(1);
+  }).join('') || 'importedCsv';
+
+  return `${/^\d/.test(resourceName) ? `csv${resourceName}` : resourceName}.csv`;
+}
+
+function headerValue(request, name) {
+  if (typeof request.headers?.get === 'function') {
+    return request.headers.get(name);
+  }
+
+  return request.headers?.[name] ?? request.headers?.[name.toLowerCase()];
 }
 
 export function sendJson(response, status, body) {

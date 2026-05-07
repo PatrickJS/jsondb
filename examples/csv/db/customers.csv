@@ -1,0 +1,4 @@
+Customer ID,Name,Email,Plan,Active,Signup Score,Postal Code
+c_1,Ada Lovelace,ada@example.com,team,true,98,02139
+c_2,Grace Hopper,grace@example.com,enterprise,true,95,10001
+c_3,Katherine Johnson,katherine@example.com,starter,false,88,23666

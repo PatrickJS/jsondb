@@ -354,6 +354,7 @@ For v1, support:
 ```txt
 .json
 .jsonc
+.csv
 .schema.jsonc
 .schema.mjs
 ```
@@ -666,6 +667,7 @@ resource list
 collection table viewer
 singleton document JSON viewer
 selected JSON copy
+CSV drag-and-drop import into db/
 REST route specs with copy/paste examples
 REST request runner
 GraphQL SDL viewer
@@ -674,6 +676,18 @@ GraphQL runner with variables
 schema and field inspection
 diagnostics summary
 ```
+
+CSV data-first fixtures should be treated as collections. The first row is the header row, headers become JSON field names, values are parsed into records, and the runtime mirror is written as `.jsondb/state/<resource>.json`.
+
+The runtime mirror should track source hashes for CSV files. If a CSV hash changes during sync, regenerate the JSON state for that resource from the CSV. If the hash is unchanged, preserve runtime mirror edits.
+
+The viewer should support uploading a CSV through:
+
+```txt
+POST /__jsondb/import
+```
+
+The upload should copy the CSV into `db/`, run sync, reload the in-memory resources, update the URL query parameter to the imported resource, and reload the dashboard view.
 
 GraphQL should support a dependency-free subset suitable for local app development:
 
@@ -895,11 +909,12 @@ The package should accept these source formats:
 ```txt
 db/users.json              data-first fixture
 db/users.jsonc             data-first fixture with comments
+db/users.csv               data-first collection fixture
 db/users.schema.jsonc      schema/type-first fixture
 db/users.schema.mjs        schema/type-first fixture using JS helpers
 ```
 
-The main source JSON/JSONC fixture can be used to infer schema and generate types.
+The main source JSON/JSONC/CSV fixture can be used to infer schema and generate types.
 
 A `.schema.jsonc` file can define a resource without seed data:
 
