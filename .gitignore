@@ -2,3 +2,4 @@ node_modules/
 .jsondb/
 coverage/
 *.log
+/.tmp
