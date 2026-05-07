@@ -621,9 +621,54 @@ The package should keep protocol-specific implementation in dedicated modules:
 ```txt
 src/rest/
 src/graphql/
+src/web/
 ```
 
 REST should expose generated collection and singleton document routes.
+
+REST should support sequential batch requests:
+
+```txt
+POST /__jsondb/batch
+```
+
+```json
+[
+  {
+    "method": "GET",
+    "path": "/users"
+  },
+  {
+    "method": "PATCH",
+    "path": "/settings",
+    "body": {
+      "theme": "dark"
+    }
+  }
+]
+```
+
+The local server should also expose a built-in dependency-free viewer:
+
+```txt
+GET /__jsondb
+```
+
+The viewer should support:
+
+```txt
+resource list
+collection table viewer
+singleton document JSON viewer
+selected JSON copy
+REST route specs with copy/paste examples
+REST request runner
+GraphQL SDL viewer
+GraphQL query and mutation examples
+GraphQL runner with variables
+schema and field inspection
+diagnostics summary
+```
 
 GraphQL should support a dependency-free subset suitable for local app development:
 
@@ -653,6 +698,7 @@ collection create/update/delete mutations
 singleton document queries
 singleton document update/set mutations
 selection-set projection
+HTTP batching by posting an array to /graphql
 ```
 
 Unsupported in the dependency-free v1 subset:
@@ -663,6 +709,74 @@ directives
 subscriptions
 full introspection
 general-purpose GraphQL validation
+```
+
+## Repo Example Launcher
+
+The repo should include an npm task that starts every example database and serves an index page of viewer links:
+
+```bash
+npm run examples
+```
+
+The index page should list each example and link to:
+
+```txt
+/__jsondb
+/__jsondb/schema
+/graphql
+```
+
+Examples should range from basic to advanced:
+
+```txt
+examples/basic
+examples/data-first
+examples/schema-first
+examples/advanced
+```
+
+## Client API
+
+Provide a small HTTP client for consuming jsondb from apps and tests:
+
+```ts
+import { createJsonDbClient } from 'json-fixture-db/client';
+
+const client = createJsonDbClient({
+  baseUrl: 'http://127.0.0.1:7331',
+  batching: {
+    enabled: true,
+    delayMs: 0,
+  },
+});
+```
+
+The client should support:
+
+```txt
+client.graphql(query, variables)
+client.graphql.batch(requests)
+client.rest(method, path, body)
+client.rest.batch(requests)
+optional automatic batching for individual GraphQL and REST calls
+10ms default automatic batching window
+dedupe for identical automatic batch requests
+```
+
+Local mock behavior should support latency and chaos errors:
+
+```js
+export default {
+  mock: {
+    delay: [50, 300],
+    errors: {
+      rate: 0.05,
+      status: 503,
+      message: 'Random local mock failure',
+    },
+  },
+};
 ```
 
 ## Codex Prompt Add-On

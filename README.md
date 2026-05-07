@@ -81,6 +81,29 @@ jsondb create users '{"id":"u_2","name":"Grace Hopper"}'
 jsondb serve
 ```
 
+Run all repo examples and open an index of their viewers:
+
+```bash
+npm run examples
+```
+
+The examples index starts each example on its own port and lists links to each `/__jsondb` viewer.
+
+Open the built-in viewer after starting the server:
+
+```txt
+http://127.0.0.1:7331/__jsondb
+```
+
+The viewer includes:
+
+- resource and data browsing
+- REST specs with copyable examples
+- a REST request runner
+- GraphQL SDL, query examples, and mutation examples
+- a GraphQL runner with variables
+- schema and field inspection
+
 ## REST And GraphQL
 
 `jsondb serve` exposes REST routes for collections and singleton documents:
@@ -111,6 +134,21 @@ query GetUser($id: ID!) {
 }
 ```
 
+Multiple root fields and aliases in one request are supported:
+
+```ts
+const result = await client.graphql(`{
+  users {
+    id
+    email
+  }
+  secondUsers: users {
+    id
+    email
+  }
+}`);
+```
+
 Supported GraphQL features include:
 
 - queries and mutations
@@ -123,6 +161,111 @@ Supported GraphQL features include:
 - document mutations like `updateSettings` and `setSettings`
 
 This is intentionally a focused GraphQL-compatible subset, not a general GraphQL engine. Fragments, directives, subscriptions, and full introspection are not implemented.
+
+GraphQL batching is supported by posting an array to `/graphql`:
+
+```json
+[
+  {
+    "query": "{ users { id name } }"
+  },
+  {
+    "query": "{ settings { theme } }"
+  }
+]
+```
+
+The client can also batch requests made within a short timeout. The default batching window is `10ms`, and identical requests in the same window are deduped by default:
+
+```ts
+const client = createJsonDbClient({
+  baseUrl: 'http://127.0.0.1:7331',
+  batching: true,
+});
+
+const [first, second] = await Promise.all([
+  client.graphql(`{ users { id email } }`),
+  client.graphql(`{ users { id email } }`),
+]);
+```
+
+REST batching is supported through:
+
+```txt
+POST /__jsondb/batch
+```
+
+```json
+[
+  {
+    "method": "GET",
+    "path": "/users"
+  },
+  {
+    "method": "PATCH",
+    "path": "/settings",
+    "body": {
+      "theme": "dark"
+    }
+  }
+]
+```
+
+REST examples:
+
+```ts
+await client.rest.get('/users');
+
+await client.rest.post('/users', {
+  id: 'u_2',
+  name: 'Grace Hopper',
+  email: 'grace@example.com',
+});
+
+await client.rest.patch('/users/u_2', {
+  role: 'admin',
+});
+
+await client.rest.delete('/users/u_2');
+```
+
+REST automatic batching uses the same `batching` option:
+
+```ts
+const [users, settings] = await Promise.all([
+  client.rest.get('/users'),
+  client.rest.get('/settings'),
+]);
+```
+
+Mock latency and random errors can be enabled for local chaos testing:
+
+```js
+export default {
+  mock: {
+    delay: {
+      minMs: 50,
+      maxMs: 300,
+    },
+    errors: {
+      rate: 0.05,
+      status: 503,
+      message: 'Random local mock failure',
+    },
+  },
+};
+```
+
+The delay can also be written as a range:
+
+```js
+export default {
+  mock: {
+    delay: [50, 300],
+    errors: 0.05,
+  },
+};
+```
 
 ## Package API
 
@@ -159,6 +302,33 @@ const result = await executeGraphql(db, {
     }
   }`,
 });
+```
+
+Or use the small HTTP client:
+
+```ts
+import { createJsonDbClient } from 'json-fixture-db/client';
+
+const client = createJsonDbClient({
+  baseUrl: 'http://127.0.0.1:7331',
+  batching: {
+    enabled: true,
+    delayMs: 10,
+    dedupe: true,
+  },
+});
+
+const users = await client.graphql(`{
+  users {
+    id
+    email
+  }
+}`);
+
+const batch = await client.rest.batch([
+  { method: 'GET', path: '/users' },
+  { method: 'GET', path: '/settings' },
+]);
 ```
 
 See [SPEC.md](./SPEC.md) for the full product model.

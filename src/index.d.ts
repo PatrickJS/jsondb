@@ -42,6 +42,20 @@ export type JsonDbOptions = {
     enabled?: boolean;
     path?: string;
   };
+  mock?: {
+    delay?: number | [number, number] | {
+      minMs?: number;
+      maxMs?: number;
+      min?: number;
+      max?: number;
+    } | null;
+    errors?: number | {
+      rate?: number;
+      probability?: number;
+      status?: number;
+      message?: string;
+    } | null;
+  };
 };
 
 export type JsonDbCollection<RecordType> = {
@@ -68,13 +82,74 @@ export type JsonFixtureDb<Types extends JsonDbTypeMap = JsonDbTypeMap> = {
   resourceNames(): string[];
 };
 
+export type GraphqlRequest = {
+  query: string;
+  variables?: Record<string, unknown>;
+};
+
+export type GraphqlResult = {
+  data: unknown;
+  errors?: Array<{ message: string }>;
+};
+
+export type RestBatchRequest = {
+  method?: string;
+  path: string;
+  body?: unknown;
+};
+
+export type RestBatchResult = {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+};
+
+export type JsonDbClientOptions = {
+  baseUrl?: string;
+  graphqlPath?: string;
+  restBatchPath?: string;
+  batching?: boolean | {
+    enabled?: boolean;
+    delayMs?: number;
+    dedupe?: boolean;
+  };
+};
+
+export type JsonDbClientRequestOptions = {
+  batch?: boolean;
+};
+
+export type JsonDbClient = {
+  graphql: {
+    (query: string | GraphqlRequest, variables?: Record<string, unknown>, options?: JsonDbClientRequestOptions): Promise<GraphqlResult>;
+    request(query: string | GraphqlRequest, variables?: Record<string, unknown>, options?: JsonDbClientRequestOptions): Promise<GraphqlResult>;
+    batch(requests: GraphqlRequest[]): Promise<GraphqlResult[]>;
+  };
+  rest: {
+    (method: string | RestBatchRequest, path?: string, body?: unknown, options?: JsonDbClientRequestOptions): Promise<RestBatchResult>;
+    request(method: string | RestBatchRequest, path?: string, body?: unknown, options?: JsonDbClientRequestOptions): Promise<RestBatchResult>;
+    batch(requests: RestBatchRequest[]): Promise<RestBatchResult[]>;
+    get(path: string, options?: JsonDbClientRequestOptions): Promise<RestBatchResult>;
+    post(path: string, body?: unknown, options?: JsonDbClientRequestOptions): Promise<RestBatchResult>;
+    patch(path: string, body?: unknown, options?: JsonDbClientRequestOptions): Promise<RestBatchResult>;
+    put(path: string, body?: unknown, options?: JsonDbClientRequestOptions): Promise<RestBatchResult>;
+    delete(path: string, options?: JsonDbClientRequestOptions): Promise<RestBatchResult>;
+  };
+};
+
 export function openJsonFixtureDb<Types extends JsonDbTypeMap = JsonDbTypeMap>(options?: JsonDbOptions): Promise<JsonFixtureDb<Types>>;
+export function createJsonDbClient(options?: JsonDbClientOptions): JsonDbClient;
 export function loadConfig(options?: JsonDbOptions): Promise<JsonDbOptions>;
 export function syncJsonFixtureDb(config: JsonDbOptions): Promise<unknown>;
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
 export function startJsonDbServer(options?: JsonDbOptions): Promise<{ server: unknown; db: JsonFixtureDb; url: string }>;
 export function executeGraphql(
   db: JsonFixtureDb,
-  request: string | { query: string; variables?: Record<string, unknown> },
-): Promise<{ data: unknown; errors?: Array<{ message: string }> }>;
+  request: string | GraphqlRequest,
+): Promise<GraphqlResult>;
+export function executeGraphql(
+  db: JsonFixtureDb,
+  request: GraphqlRequest[],
+): Promise<GraphqlResult[]>;
+export function executeGraphqlBatch(db: JsonFixtureDb, requests: GraphqlRequest[]): Promise<GraphqlResult[]>;
 export function parseGraphql(query: string): unknown;

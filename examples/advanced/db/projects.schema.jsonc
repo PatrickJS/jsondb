@@ -1,0 +1,38 @@
+{
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true
+    },
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "ownerId": {
+      "type": "string",
+      "required": true
+    },
+    "status": {
+      "type": "enum",
+      "values": ["planned", "active", "paused", "done"],
+      "default": "planned"
+    },
+    "metadata": {
+      "type": "object",
+      "default": {}
+    }
+  },
+  "seed": [
+    {
+      "id": "proj_1",
+      "name": "Local checkout",
+      "ownerId": "u_1",
+      "status": "active",
+      "metadata": {
+        "priority": "high"
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  // Singleton app settings with JSONC comments.
+  "theme": "dark",
+  "locale": "en-US",
+  "features": {
+    "billing": true,
+    "graphql": true,
+  },
+}

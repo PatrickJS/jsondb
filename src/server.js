@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { openJsonFixtureDb } from './db.js';
 import { handleGraphqlRequest } from './graphql/http.js';
+import { runMockBehavior } from './mock.js';
 import { handleRestRequest, sendJson } from './rest/handler.js';
 
 export async function startJsonDbServer(options = {}) {
@@ -20,15 +21,23 @@ export async function startJsonDbServer(options = {}) {
     server.listen(port, host, resolve);
   });
 
+  const address = server.address();
+  const boundPort = address && typeof address === 'object' ? address.port : port;
+
   return {
     server,
     db,
-    url: `http://${host}:${port}`,
+    url: `http://${host}:${boundPort}`,
   };
 }
 
 async function handleRequest(db, request, response) {
   const url = new URL(request.url, 'http://jsondb.local');
+  const mockResult = await runMockBehavior(db.config, url);
+  if (mockResult) {
+    sendJson(response, mockResult.status, mockResult.body);
+    return;
+  }
 
   if (db.config.graphql?.enabled !== false && url.pathname === (db.config.graphql?.path ?? '/graphql')) {
     await handleGraphqlRequest(db, request, response);

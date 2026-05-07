@@ -24,6 +24,9 @@ Important files:
 - `src/server.js`: dependency-free local HTTP server entry point.
 - `src/rest`: REST request routing and HTTP helpers.
 - `src/graphql`: dependency-free GraphQL subset parser, executor, and HTTP handler.
+- `src/web`: dependency-free built-in viewer served at `/__jsondb`.
+- `src/client.js`: tiny HTTP client with GraphQL and REST batching support.
+- `scripts/serve-examples.js`: starts every repo example and serves an index of viewer links.
 - `src/schema-builders.js`: `.schema.mjs` authoring helpers exported as `json-fixture-db/schema`.
 - `test/jsondb.test.js`: general Node test runner suite.
 - `test/helpers.js`: shared test project helpers.
@@ -46,6 +49,7 @@ Useful CLI smoke checks:
 node ./src/cli.js sync --cwd ./examples/basic
 node ./src/cli.js schema validate --cwd ./examples/basic
 node ./src/cli.js create users '{"id":"u_2","name":"Grace Hopper","email":"grace@example.com"}' --cwd ./examples/basic
+npm run examples
 ```
 
 The local REST server binds a loopback port. In sandboxed environments this may require explicit approval:
@@ -96,6 +100,10 @@ Add tests for every behavior change that touches:
 - runtime collection/document APIs
 - server routes
 - GraphQL parser/executor behavior, especially aliases, variables, and mutations
+- GraphQL and REST batching behavior
+- client direct and automatic batching behavior, including 10ms default windows and dedupe
+- mock delay/error behavior
+- built-in viewer behavior and generated examples
 
 ## GitHub Actions
 

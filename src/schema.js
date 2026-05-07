@@ -409,6 +409,7 @@ function serializeResource(resource) {
   return {
     kind: resource.kind,
     typeName: resource.typeName,
+    routePath: resource.routePath,
     idField: resource.kind === 'collection' ? resource.idField : undefined,
     description: resource.description,
     fields: resource.fields,

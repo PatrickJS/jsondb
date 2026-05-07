@@ -1,0 +1,29 @@
+{
+  "kind": "document",
+  "fields": {
+    "theme": {
+      "type": "string",
+      "default": "light"
+    },
+    "locale": {
+      "type": "string",
+      "default": "en-US"
+    },
+    "features": {
+      "type": "object",
+      "fields": {
+        "billing": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  },
+  "seed": {
+    "theme": "light",
+    "locale": "en-US",
+    "features": {
+      "billing": false
+    }
+  }
+}

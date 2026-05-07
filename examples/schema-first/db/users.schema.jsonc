@@ -1,0 +1,36 @@
+{
+  // Users who can sign into the local test app.
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable user id."
+    },
+    "name": {
+      "type": "string",
+      "required": true,
+      "description": "Display name shown in the UI."
+    },
+    "email": {
+      "type": "string",
+      "required": true,
+      "description": "Unique email address."
+    },
+    "role": {
+      "type": "enum",
+      "values": ["admin", "user"],
+      "default": "user",
+      "description": "Local authorization role."
+    }
+  },
+  "seed": [
+    {
+      "id": "u_1",
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "role": "admin"
+    }
+  ]
+}

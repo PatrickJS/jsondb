@@ -67,6 +67,47 @@ test('dependency-free GraphQL queries support aliases and variables', async () =
   });
 });
 
+test('dependency-free GraphQL supports repeated root fields with aliases in one request', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      email: 'ada@example.com',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: `{
+      users {
+        id
+        email
+      }
+      secondUsers: users {
+        id
+        email
+      }
+    }`,
+  });
+
+  assert.deepEqual(result, {
+    data: {
+      users: [
+        {
+          id: 'u_1',
+          email: 'ada@example.com',
+        },
+      ],
+      secondUsers: [
+        {
+          id: 'u_1',
+          email: 'ada@example.com',
+        },
+      ],
+    },
+  });
+});
+
 test('dependency-free GraphQL collection mutations create update and delete records', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.jsonc', `{
@@ -204,4 +245,52 @@ test('dependency-free GraphQL document queries and mutations work', async () => 
       },
     },
   });
+});
+
+test('dependency-free GraphQL supports batched requests', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [
+      { "id": "u_1", "name": "Ada Lovelace" }
+    ]
+  }`);
+  await writeFixture(cwd, 'settings.json', JSON.stringify({
+    theme: 'light',
+  }));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, [
+    {
+      query: '{ users { id name } }',
+    },
+    {
+      query: '{ settings { theme } }',
+    },
+  ]);
+
+  assert.deepEqual(result, [
+    {
+      data: {
+        users: [
+          {
+            id: 'u_1',
+            name: 'Ada Lovelace',
+          },
+        ],
+      },
+    },
+    {
+      data: {
+        settings: {
+          theme: 'light',
+        },
+      },
+    },
+  ]);
 });

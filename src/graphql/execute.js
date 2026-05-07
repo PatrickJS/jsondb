@@ -2,6 +2,24 @@ import { camelCase, singularResourceName } from '../names.js';
 import { parseGraphql } from './parser.js';
 
 export async function executeGraphql(db, request) {
+  if (Array.isArray(request)) {
+    return executeGraphqlBatch(db, request);
+  }
+
+  return executeGraphqlSingle(db, request);
+}
+
+export async function executeGraphqlBatch(db, requests) {
+  const results = [];
+
+  for (const request of requests) {
+    results.push(await executeGraphqlSingle(db, request));
+  }
+
+  return results;
+}
+
+async function executeGraphqlSingle(db, request) {
   try {
     const query = typeof request === 'string' ? request : request.query;
     const variables = typeof request === 'string' ? {} : request.variables ?? {};

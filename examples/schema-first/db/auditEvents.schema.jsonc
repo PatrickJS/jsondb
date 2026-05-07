@@ -1,0 +1,24 @@
+{
+  // Audit events generated during local development.
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true
+    },
+    "type": {
+      "type": "string",
+      "required": true
+    },
+    "createdAt": {
+      "type": "string",
+      "required": true
+    },
+    "payload": {
+      "type": "object",
+      "default": {}
+    }
+  },
+  "seed": []
+}

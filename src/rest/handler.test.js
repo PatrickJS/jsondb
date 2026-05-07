@@ -32,6 +32,55 @@ test('REST handler resolves generated kebab-case collection routes', async () =>
   ]);
 });
 
+test('REST handler serves the built-in jsondb viewer', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/__jsondb'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers['content-type'], /text\/html/);
+  assert.match(response.body, /jsondb viewer/);
+  assert.match(response.body, /REST Specs/);
+  assert.match(response.body, /GraphQL Examples/);
+});
+
+test('REST schema endpoint exposes route paths for the viewer', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'auditEvents.json', JSON.stringify([
+    {
+      id: 'evt_1',
+      type: 'created',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/__jsondb/schema'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json().resources.auditEvents.routePath, '/audit-events');
+});
+
 test('REST handler creates collection records and applies defaults', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.jsonc', `{
@@ -94,6 +143,73 @@ test('REST handler updates singleton documents', async () => {
     theme: 'dark',
     locale: 'en-US',
   });
+});
+
+test('REST handler supports batched requests', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true },
+      "role": {
+        "type": "enum",
+        "values": ["admin", "user"],
+        "default": "user"
+      }
+    },
+    "seed": []
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('POST', [
+      {
+        method: 'POST',
+        path: '/users',
+        body: {
+          id: 'u_1',
+          name: 'Ada Lovelace',
+        },
+      },
+      {
+        method: 'GET',
+        path: '/users/u_1',
+      },
+    ]),
+    response,
+    new URL('http://jsondb.local/__jsondb/batch'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.json(), [
+    {
+      status: 201,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: {
+        id: 'u_1',
+        name: 'Ada Lovelace',
+        role: 'user',
+      },
+    },
+    {
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: {
+        id: 'u_1',
+        name: 'Ada Lovelace',
+        role: 'user',
+      },
+    },
+  ]);
 });
 
 function makeRequest(method, body) {

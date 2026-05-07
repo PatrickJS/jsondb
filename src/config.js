@@ -39,6 +39,10 @@ export const DEFAULT_CONFIG = {
     enabled: true,
     path: '/graphql',
   },
+  mock: {
+    delay: null,
+    errors: null,
+  },
 };
 
 export async function loadConfig(options = {}) {

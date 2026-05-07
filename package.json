@@ -14,6 +14,10 @@
     "./schema": {
       "types": "./src/schema.d.ts",
       "default": "./src/schema-builders.js"
+    },
+    "./client": {
+      "types": "./src/index.d.ts",
+      "default": "./src/client.js"
     }
   },
   "files": [
@@ -21,16 +25,18 @@
     "src/**/*.d.ts",
     "!src/**/*.test.js",
     "scripts",
-    "examples/basic/README.md",
-    "examples/basic/db",
-    "examples/basic/jsondb.config.mjs",
-    "examples/basic/src/generated",
+    "examples/*/README.md",
+    "examples/*/db/**",
+    "examples/*/jsondb.config.mjs",
+    "examples/*/src/generated/**",
     "README.md",
     "SPEC.md"
   ],
   "scripts": {
     "check": "node ./scripts/check-syntax.js",
     "test": "node ./scripts/run-tests.js",
+    "examples": "node ./scripts/serve-examples.js",
+    "view:examples": "node ./scripts/serve-examples.js",
     "jsondb": "node ./src/cli.js"
   },
   "engines": {
