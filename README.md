@@ -81,6 +81,49 @@ jsondb create users '{"id":"u_2","name":"Grace Hopper"}'
 jsondb serve
 ```
 
+## REST And GraphQL
+
+`jsondb serve` exposes REST routes for collections and singleton documents:
+
+```txt
+GET     /users
+GET     /users/:id
+POST    /users
+PATCH   /users/:id
+DELETE  /users/:id
+
+GET     /settings
+PUT     /settings
+PATCH   /settings
+```
+
+It also exposes a dependency-free GraphQL subset at `/graphql`.
+
+```graphql
+query GetUser($id: ID!) {
+  allUsers: users {
+    id
+    displayName: name
+  }
+  ada: user(id: $id) {
+    email
+  }
+}
+```
+
+Supported GraphQL features include:
+
+- queries and mutations
+- root and nested field aliases
+- variables
+- object/list/scalar input values
+- collection fields like `users` and `user(id: ID!)`
+- collection mutations like `createUser`, `updateUser`, and `deleteUser`
+- document fields like `settings`
+- document mutations like `updateSettings` and `setSettings`
+
+This is intentionally a focused GraphQL-compatible subset, not a general GraphQL engine. Fragments, directives, subscriptions, and full introspection are not implemented.
+
 ## Package API
 
 ```ts
@@ -99,6 +142,22 @@ await users.create({
   name: 'Grace Hopper',
   email: 'grace@example.com',
   role: 'user',
+});
+```
+
+You can also execute GraphQL directly through the package API:
+
+```ts
+import { executeGraphql, openJsonFixtureDb } from 'json-fixture-db';
+
+const db = await openJsonFixtureDb({ sourceDir: './db' });
+const result = await executeGraphql(db, {
+  query: `{
+    users {
+      id
+      email
+    }
+  }`,
 });
 ```
 

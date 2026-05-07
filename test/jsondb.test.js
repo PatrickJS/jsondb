@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, writeFile, mkdir, symlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
 import { openJsonFixtureDb, syncJsonFixtureDb, loadConfig, loadProjectSchema, generateTypes } from '../src/index.js';
+import { makeProject, writeConfig, writeFixture } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -262,19 +262,3 @@ test('CLI types --out writes relative to --cwd', async () => {
   assert.match(stdout, /Generated src\/generated\/jsondb\.types\.ts/);
   assert.match(generated, /export type User =/);
 });
-
-async function makeProject() {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'jsondb-test-'));
-  await mkdir(path.join(cwd, 'db'), { recursive: true });
-  await mkdir(path.join(cwd, 'node_modules'), { recursive: true });
-  await symlink(path.resolve('.'), path.join(cwd, 'node_modules', 'json-fixture-db'), 'dir');
-  return cwd;
-}
-
-async function writeFixture(cwd, filename, content) {
-  await writeFile(path.join(cwd, 'db', filename), `${content}\n`, 'utf8');
-}
-
-async function writeConfig(cwd, content) {
-  await writeFile(path.join(cwd, 'jsondb.config.mjs'), `${content}\n`, 'utf8');
-}

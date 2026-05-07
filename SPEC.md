@@ -614,6 +614,57 @@ Generated src/generated/jsondb.types.ts
 Synced runtime mirror
 ```
 
+## REST And GraphQL Runtime
+
+The package should keep protocol-specific implementation in dedicated modules:
+
+```txt
+src/rest/
+src/graphql/
+```
+
+REST should expose generated collection and singleton document routes.
+
+GraphQL should support a dependency-free subset suitable for local app development:
+
+```graphql
+query GetUser($id: ID!) {
+  allUsers: users {
+    id
+    displayName: name
+  }
+  ada: user(id: $id) {
+    email
+  }
+}
+```
+
+Supported GraphQL behavior:
+
+```txt
+queries
+mutations
+root and nested aliases
+variables
+object/list/scalar input values
+collection list queries
+collection single-record queries by id
+collection create/update/delete mutations
+singleton document queries
+singleton document update/set mutations
+selection-set projection
+```
+
+Unsupported in the dependency-free v1 subset:
+
+```txt
+fragments
+directives
+subscriptions
+full introspection
+general-purpose GraphQL validation
+```
+
 ## Codex Prompt Add-On
 
 Append this to the Codex prompt:

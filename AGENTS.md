@@ -21,9 +21,13 @@ Important files:
 - `src/types.js`: TypeScript type generation.
 - `src/sync.js`: generated schema/types and runtime mirror sync.
 - `src/db.js`: package runtime API.
-- `src/server.js`: dependency-free local HTTP server.
+- `src/server.js`: dependency-free local HTTP server entry point.
+- `src/rest`: REST request routing and HTTP helpers.
+- `src/graphql`: dependency-free GraphQL subset parser, executor, and HTTP handler.
 - `src/schema-builders.js`: `.schema.mjs` authoring helpers exported as `json-fixture-db/schema`.
-- `test/jsondb.test.js`: Node test runner suite.
+- `test/jsondb.test.js`: general Node test runner suite.
+- `test/helpers.js`: shared test project helpers.
+- `src/**/*.test.js`: co-located protocol/module tests.
 - `examples/basic`: smoke-testable example project.
 
 ## Commands
@@ -77,6 +81,8 @@ If a smoke command writes `.jsondb/` inside `examples/basic`, remove those gener
 
 Use `node:test` and temporary project directories under the system temp directory. Tests should create their own `db/` fixtures and avoid depending on generated repo state.
 
+Put broad package behavior in `test/*.test.js`. Put protocol-specific tests next to their implementation, such as `src/graphql/graphql.test.js` and `src/rest/handler.test.js`.
+
 When testing `.schema.mjs`, symlink this repo into the temp project's `node_modules/json-fixture-db` so package self-imports behave like a consumer install.
 
 Add tests for every behavior change that touches:
@@ -89,6 +95,7 @@ Add tests for every behavior change that touches:
 - CLI path handling
 - runtime collection/document APIs
 - server routes
+- GraphQL parser/executor behavior, especially aliases, variables, and mutations
 
 ## GitHub Actions
 

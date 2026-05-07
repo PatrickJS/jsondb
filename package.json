@@ -17,7 +17,9 @@
     }
   },
   "files": [
-    "src",
+    "src/**/*.js",
+    "src/**/*.d.ts",
+    "!src/**/*.test.js",
     "scripts",
     "examples/basic/README.md",
     "examples/basic/db",
@@ -28,7 +30,7 @@
   ],
   "scripts": {
     "check": "node ./scripts/check-syntax.js",
-    "test": "node --test",
+    "test": "node ./scripts/run-tests.js",
     "jsondb": "node ./src/cli.js"
   },
   "engines": {

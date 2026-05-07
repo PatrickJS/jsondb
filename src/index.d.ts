@@ -73,3 +73,8 @@ export function loadConfig(options?: JsonDbOptions): Promise<JsonDbOptions>;
 export function syncJsonFixtureDb(config: JsonDbOptions): Promise<unknown>;
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
 export function startJsonDbServer(options?: JsonDbOptions): Promise<{ server: unknown; db: JsonFixtureDb; url: string }>;
+export function executeGraphql(
+  db: JsonFixtureDb,
+  request: string | { query: string; variables?: Record<string, unknown> },
+): Promise<{ data: unknown; errors?: Array<{ message: string }> }>;
+export function parseGraphql(query: string): unknown;
