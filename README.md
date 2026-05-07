@@ -4,6 +4,10 @@ A local JSON fixture database for app development and tests. It can infer schema
 
 ## Quick Start
 
+Start with data in minutes, then tighten the model when product requirements change.
+
+### 1) Prototype with fixtures first
+
 ```bash
 mkdir -p db
 cat > db/users.json <<'JSON'
@@ -11,8 +15,7 @@ cat > db/users.json <<'JSON'
   {
     "id": "u_1",
     "name": "Ada Lovelace",
-    "email": "ada@example.com",
-    "role": "admin"
+    "email": "ada@example.com"
   }
 ]
 JSON
@@ -20,13 +23,53 @@ JSON
 npx json-fixture-db sync
 ```
 
-Generated files:
+### 2) Requirements changed: enforce roles and defaults
+
+Create `db/users.schema.json`:
+
+```json
+{
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": { "type": "string", "required": true },
+    "name": { "type": "string", "required": true },
+    "email": { "type": "string", "required": true },
+    "role": {
+      "type": "enum",
+      "values": ["admin", "user"],
+      "default": "user"
+    }
+  }
+}
+```
+
+```bash
+npx json-fixture-db sync
+npx json-fixture-db schema validate
+```
+
+### 3) Keep shipping with generated state, schema, and types
 
 ```txt
 .jsondb/schema.generated.json
 .jsondb/types/index.ts
 .jsondb/state/users.json
 ```
+
+From your project root, jsondb uses `./db` by default:
+
+```bash
+npx json-fixture-db serve
+```
+
+`serve` syncs on startup and then watches `db/` for source changes.
+
+Why this matters:
+
+- Start data-first when requirements are fuzzy.
+- Add schema rules later without switching tools or rewriting fixtures.
+- Keep one source of truth for local data, generated types, and REST/GraphQL behavior.
 
 Collections always get an id field. If a JSON/JSONC/CSV collection fixture omits `id`, jsondb adds counter ids in the runtime mirror:
 
@@ -39,11 +82,14 @@ Collections always get an id field. If a JSON/JSONC/CSV collection fixture omits
 
 In default `mode: 'mirror'`, source files stay unchanged. In `mode: 'source'`, jsondb writes generated ids back to plain `.json` fixtures.
 
+The next sections go deeper on schema authoring options, CSV workflows, and API usage.
+
 ## Schema-First Fixtures
 
-```jsonc
+Author schema in plain JSON as `db/<name>.schema.json`, or use `db/<name>.schema.jsonc` when you want comments and trailing commas.
+
+```json
 {
-  // Users who can sign into the local test app.
   "kind": "collection",
   "idField": "id",
   "fields": {
@@ -79,6 +125,19 @@ export default collection({
 ```
 
 Schema-backed fixtures are validated against declared field types. Required fields, primitive types, enum values, arrays, and nested objects are checked during `sync` and during package, REST, and GraphQL writes.
+
+If you want schema-only resources to start with generated mock records, opt in with `jsondb.config.mjs`:
+
+```js
+export default {
+  seed: {
+    generateFromSchema: true,
+    generatedCount: 5,
+  },
+};
+```
+
+When enabled, jsondb generates runtime state only for schema-only resources that have empty seed data. Data files in `db/*.json`, `db/*.jsonc`, and `db/*.csv` remain the source of truth when present.
 
 ## CSV Fixtures
 

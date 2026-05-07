@@ -14,7 +14,7 @@ export async function loadProjectSchema(config) {
   const schemaFiles = new Map();
 
   for (const filename of files) {
-    if (filename.endsWith('.schema.jsonc') || filename.endsWith('.schema.mjs')) {
+    if (filename.endsWith('.schema.json') || filename.endsWith('.schema.jsonc') || filename.endsWith('.schema.mjs')) {
       if (config.schema?.source === 'data') {
         continue;
       }
@@ -474,7 +474,7 @@ function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, rawDa
       dataFormat,
       dataHash,
       schemaPath,
-      schemaSource: schemaPath?.endsWith('.mjs') ? 'mjs' : 'jsonc',
+      schemaSource: schemaSourceFromPath(schemaPath),
       typeSource: 'schema',
       generatedIds: idResult.generated,
     });
@@ -558,7 +558,27 @@ async function loadSchemaFile(filePath) {
     return module.default;
   }
 
+  if (filePath.endsWith('.schema.json')) {
+    return JSON.parse(await readText(filePath));
+  }
+
   return parseJsonc(await readText(filePath), filePath);
+}
+
+function schemaSourceFromPath(schemaPath) {
+  if (!schemaPath) {
+    return null;
+  }
+
+  if (schemaPath.endsWith('.mjs')) {
+    return 'mjs';
+  }
+
+  if (schemaPath.endsWith('.schema.json')) {
+    return 'json';
+  }
+
+  return 'jsonc';
 }
 
 function dataResourceName(filename) {
@@ -566,7 +586,7 @@ function dataResourceName(filename) {
 }
 
 function schemaResourceName(filename) {
-  return filename.replace(/\.schema\.(jsonc|mjs)$/, '');
+  return filename.replace(/\.schema\.(json|jsonc|mjs)$/, '');
 }
 
 function inferKindFromData(data) {

@@ -51,6 +51,58 @@ test('schema-only fixtures generate types and initialize empty state', async () 
   assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/auditEvents.json'), 'utf8')), []);
 });
 
+test('schema-only fixtures can generate synthetic seed records', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    seed: {
+      generateFromSchema: true,
+      generatedCount: 3,
+    },
+  };`);
+  await writeFixture(cwd, 'users.schema.json', JSON.stringify({
+    kind: 'collection',
+    idField: 'id',
+    fields: {
+      id: { type: 'string', required: true },
+      name: { type: 'string', required: true },
+      role: { type: 'enum', values: ['admin', 'user'] },
+      active: { type: 'boolean' },
+    },
+    seed: [],
+  }));
+
+  const config = await loadConfig({ cwd });
+  await syncJsonFixtureDb(config);
+  const state = JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8'));
+
+  assert.equal(state.length, 3);
+  assert.equal(state[0].id, '1');
+  assert.equal(state[0].name, 'name_1');
+  assert.equal(state[0].role, 'admin');
+  assert.equal(state[1].role, 'user');
+});
+
+test('.schema.json files load as schema sources', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.json', JSON.stringify({
+    kind: 'collection',
+    idField: 'id',
+    fields: {
+      id: { type: 'string', required: true },
+      name: { type: 'string', required: true },
+    },
+    seed: [],
+  }));
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+  const users = project.resources.find((resource) => resource.name === 'users');
+
+  assert.equal(project.schema.resources.users.kind, 'collection');
+  assert.equal(users.schemaSource, 'json');
+  assert.match(users.schemaPath, /users\.schema\.json$/);
+});
+
 test('mixed mode treats schema as authoritative and warns for unknown data fields', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([

@@ -27,6 +27,10 @@ export const DEFAULT_CONFIG = {
     applyOnCreate: true,
     applyOnSafeMigration: true,
   },
+  seed: {
+    generateFromSchema: false,
+    generatedCount: 5,
+  },
   collections: {},
   server: {
     host: '127.0.0.1',

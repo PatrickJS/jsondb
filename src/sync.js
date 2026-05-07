@@ -70,7 +70,7 @@ async function syncStateResource(config, resource, sourceMetadata) {
     && metadata?.hash !== resource.dataHash;
 
   if (existing === undefined || sourceChanged) {
-    await writeJsonState(statePath, applyDefaultsToSeed(resource.seed, resource, config));
+    await writeJsonState(statePath, applyDefaultsToSeed(seedForRuntimeState(resource, config), resource, config));
     updateSourceMetadata(sourceMetadata, config, resource);
     return;
   }
@@ -138,4 +138,98 @@ export function applyDefaultsToRecord(record, resource) {
   }
 
   return next;
+}
+
+function seedForRuntimeState(resource, config) {
+  if (shouldGenerateSeedFromSchema(resource, config)) {
+    return generateSyntheticSeed(resource, syntheticSeedCount(config));
+  }
+  return resource.seed;
+}
+
+function shouldGenerateSeedFromSchema(resource, config) {
+  if (config.seed?.generateFromSchema !== true) {
+    return false;
+  }
+
+  if (resource.dataPath || !resource.schemaPath) {
+    return false;
+  }
+
+  if (resource.kind === 'collection') {
+    return Array.isArray(resource.seed) && resource.seed.length === 0;
+  }
+
+  return isPlainObject(resource.seed) && Object.keys(resource.seed).length === 0;
+}
+
+function syntheticSeedCount(config) {
+  const value = Number(config.seed?.generatedCount);
+  if (!Number.isFinite(value)) {
+    return 5;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+function generateSyntheticSeed(resource, count) {
+  if (resource.kind === 'collection') {
+    return Array.from({ length: count }, (_unused, index) => generateSyntheticRecord(resource, index));
+  }
+  return generateSyntheticRecord(resource, 0);
+}
+
+function generateSyntheticRecord(resource, index) {
+  const record = {};
+  for (const [fieldName, field] of Object.entries(resource.fields ?? {})) {
+    if (fieldName === resource.idField) {
+      record[fieldName] = String(index + 1);
+      continue;
+    }
+    const value = syntheticValue(field, fieldName, index);
+    if (value !== undefined) {
+      record[fieldName] = value;
+    }
+  }
+  return record;
+}
+
+function syntheticValue(field, fieldName, index) {
+  if (!field || typeof field !== 'object' || Array.isArray(field)) {
+    return null;
+  }
+
+  if ('default' in field) {
+    return structuredClone(field.default);
+  }
+
+  if (field.type === 'enum' && Array.isArray(field.values) && field.values.length > 0) {
+    return field.values[index % field.values.length];
+  }
+
+  switch (field.type) {
+    case 'string':
+      return `${fieldName}_${index + 1}`;
+    case 'number':
+      return index + 1;
+    case 'boolean':
+      return index % 2 === 0;
+    case 'array':
+      return field.items ? [syntheticValue(field.items, `${fieldName}Item`, index)].filter((item) => item !== undefined) : [];
+    case 'object': {
+      const objectValue = {};
+      for (const [childName, childField] of Object.entries(field.fields ?? {})) {
+        const childValue = syntheticValue(childField, childName, index);
+        if (childValue !== undefined) {
+          objectValue[childName] = childValue;
+        }
+      }
+      return objectValue;
+    }
+    default:
+      return null;
+  }
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

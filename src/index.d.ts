@@ -31,6 +31,10 @@ export type JsonDbOptions = {
     applyOnCreate?: boolean;
     applyOnSafeMigration?: boolean;
   };
+  seed?: {
+    generateFromSchema?: boolean;
+    generatedCount?: number;
+  };
   collections?: Record<string, { idField?: string }>;
   server?: {
     host?: string;

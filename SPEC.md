@@ -10,7 +10,8 @@ db/
   posts.json                 optional seed data
   settings.json              optional singleton data
 
-  users.schema.jsonc         optional schema/type source
+  users.schema.json          optional schema/type source (strict JSON)
+  users.schema.jsonc         optional schema/type source (JSON with comments)
   posts.schema.jsonc
   settings.schema.jsonc
 
@@ -355,6 +356,7 @@ For v1, support:
 .json
 .jsonc
 .csv
+.schema.json
 .schema.jsonc
 .schema.mjs
 ```
@@ -971,7 +973,7 @@ Do not require TypeScript execution for schema files in v1. Use `.mjs` for execu
 Rules:
 
 1. If only `users.json` exists, infer schema from data.
-2. If only `users.schema.jsonc` or `users.schema.mjs` exists, create the collection from schema and optional seed/default data.
+2. If only `users.schema.json`, `users.schema.jsonc`, or `users.schema.mjs` exists, create the collection from schema and optional seed/default data.
 3. If both `users.json` and `users.schema.*` exist, the schema file is authoritative for types and validation, while the JSON file provides seed data.
 4. Additive fields are safe and automatic.
 5. Removed fields and type changes require explicit approval.
