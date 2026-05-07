@@ -18,6 +18,7 @@
   },
   "files": [
     "src",
+    "scripts",
     "examples/basic/README.md",
     "examples/basic/db",
     "examples/basic/jsondb.config.mjs",
@@ -26,6 +27,7 @@
     "SPEC.md"
   ],
   "scripts": {
+    "check": "node ./scripts/check-syntax.js",
     "test": "node --test",
     "jsondb": "node ./src/cli.js"
   },
