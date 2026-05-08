@@ -48,6 +48,16 @@ export const DEFAULT_CONFIG = {
     delay: null,
     errors: null,
   },
+  generate: {
+    hono: {
+      outDir: './jsondb-api',
+      api: ['rest'],
+      db: 'sqlite',
+      app: 'standalone',
+      runtime: 'node-sqlite',
+      seed: false,
+    },
+  },
 };
 
 export async function loadConfig(options = {}) {

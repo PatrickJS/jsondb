@@ -25,6 +25,9 @@ Important files:
 - `src/rest`: REST request routing and HTTP helpers.
 - `src/graphql`: dependency-free GraphQL subset parser, executor, and HTTP handler.
 - `src/web`: dependency-free built-in viewer served at `/__jsondb`.
+- `src/generate/hono.js`: Hono/SQLite starter code generator.
+- `src/hono.js`: optional Hono integration using dynamic `hono` import.
+- `src/sqlite.js`: optional SQLite adapter using dynamic `node:sqlite` import.
 - `src/client.js`: tiny HTTP client with GraphQL and REST batching support.
 - `scripts/serve-examples.js`: starts every repo example and serves an index of viewer links.
 - `src/schema-builders.js`: `.schema.mjs` authoring helpers exported as `json-fixture-db/schema`.
@@ -82,6 +85,8 @@ If a smoke command writes `.jsondb/` inside `examples/basic`, remove those gener
 - Field `description` values should feed generated TypeScript JSDoc and GraphQL SDL descriptions.
 - Collection fixtures without `id` should receive counter ids in the runtime mirror. Default mirror mode must not rewrite source files; `mode: 'source'` may write generated ids back to plain `.json` fixtures.
 - `jsondb serve` watches `db/` for source changes, ignores `.jsondb/`, reloads valid resources, and surfaces file-specific diagnostics in the viewer without breaking unrelated resources.
+- Keep Hono and SQLite optional. Do not add mandatory package dependencies for `hono`, `@hono/node-server`, or SQLite libraries; generated starters may declare their own dependencies.
+- `jsondb generate hono` should fail on schema errors and block warning diagnostics unless explicitly allowed with `--allow-warnings`.
 
 ## Testing Guidance
 
@@ -99,6 +104,8 @@ Add tests for every behavior change that touches:
 - generated types
 - defaults
 - CLI path handling
+- Hono/SQLite starter generation output shape
+- optional SQLite behavior, gated when `node:sqlite` is unavailable
 - runtime collection/document APIs
 - server routes
 - GraphQL parser/executor behavior, especially aliases, variables, and mutations

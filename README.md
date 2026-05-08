@@ -172,6 +172,8 @@ jsondb schema users
 jsondb schema validate
 jsondb create users '{"id":"u_2","name":"Grace Hopper"}'
 jsondb serve
+jsondb generate hono
+jsondb generate hono --api rest,graphql --out ./server
 ```
 
 Run all repo examples and open an index of their viewers:
@@ -409,6 +411,37 @@ export default {
     errors: 0.05,
   },
 };
+```
+
+## Hono And SQLite Starter Generation
+
+When fixtures and schemas have settled enough to graduate toward a real database API, generate a Hono starter:
+
+```bash
+jsondb generate hono
+jsondb generate hono --api rest,graphql --out ./server
+jsondb generate hono --api none --app module
+```
+
+The default output is `./jsondb-api` with REST routes, a portable repository interface, a `node:sqlite` adapter, validators, and an initial SQL migration. Generated standalone apps are TypeScript-first and target Node.js `>=22.13` because SQLite output uses `node:sqlite`.
+
+The main package stays dependency-light. Generated apps declare their own `hono`, `@hono/node-server`, `typescript`, and `tsx` dependencies. Generation fails on schema errors and, by default, on schema warnings so production starter code only uses declared schema fields. Pass `--allow-warnings` only when you intentionally want to generate with warning diagnostics.
+
+Optional runtime exports are available for apps that want to use this package directly with Hono or SQLite:
+
+```ts
+import { Hono } from 'hono';
+import { createJsonDbHonoApp } from 'json-fixture-db/hono';
+
+const app = new Hono();
+app.route('/api', await createJsonDbHonoApp({
+  sourceDir: './db',
+  storage: {
+    kind: 'sqlite',
+    file: './data/app.sqlite',
+  },
+  api: ['rest'],
+}));
 ```
 
 ## Package API

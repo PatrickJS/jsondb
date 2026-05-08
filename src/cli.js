@@ -3,6 +3,7 @@ import { watch } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.js';
 import { openJsonFixtureDb } from './db.js';
+import { generateHonoStarter } from './generate/hono.js';
 import { loadProjectSchema } from './schema.js';
 import { startJsonDbServer } from './server.js';
 import { syncJsonFixtureDb } from './sync.js';
@@ -50,6 +51,9 @@ async function main() {
       break;
     case 'serve':
       await runServe(config, args.slice(1));
+      break;
+    case 'generate':
+      await runGenerate(config, args.slice(1));
       break;
     default:
       throw new Error(`Unknown command "${command}". Run "jsondb help".`);
@@ -154,6 +158,26 @@ async function runServe(config, args) {
   return new Promise(() => {});
 }
 
+async function runGenerate(config, args) {
+  const target = args[0];
+  if (target !== 'hono') {
+    throw new Error('Usage: jsondb generate hono [--out <dir>] [--api <rest|graphql|rest,graphql|none>] [--db sqlite] [--app <standalone|module>] [--seed fixtures] [--allow-warnings]');
+  }
+
+  const result = await generateHonoStarter(config, {
+    outDir: valueAfter(args, '--out'),
+    api: valueAfter(args, '--api'),
+    db: valueAfter(args, '--db'),
+    app: valueAfter(args, '--app'),
+    seed: valueAfter(args, '--seed'),
+    allowWarnings: args.includes('--allow-warnings') ? true : undefined,
+  });
+
+  for (const filePath of result.files) {
+    console.log(`Generated ${path.relative(config.cwd, filePath)}`);
+  }
+}
+
 function parseGlobalOptions(args) {
   return {
     cwd: valueAfter(args, '--cwd') ?? process.cwd(),
@@ -185,6 +209,7 @@ Usage:
   jsondb schema validate
   jsondb create <collection> <json>
   jsondb serve [--host <host>] [--port <port>]
+  jsondb generate hono [--out <dir>] [--api <targets>] [--app <shape>]
 
 Options:
   --cwd <dir>       Project directory

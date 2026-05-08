@@ -988,7 +988,58 @@ jsondb types --watch
 jsondb types --out ./src/generated/jsondb.types.ts
 jsondb schema
 jsondb schema validate
+jsondb generate hono
+jsondb generate hono --api rest,graphql --out ./server
+jsondb generate hono --api none --app module
 ```
+
+## Hono And SQLite Starter Generation
+
+Add `jsondb generate hono` for graduating a fixture-backed app into a starter API backed by SQLite.
+
+Default behavior:
+
+```txt
+outDir: ./jsondb-api
+api: rest
+db: sqlite
+app: standalone
+runtime: node-sqlite
+seed: false
+```
+
+Generated output should be TypeScript-first and include a portable repository interface, SQLite adapter using `node:sqlite`, validators, initial SQL migration, and optional Hono REST/GraphQL route modules. Standalone output should include `package.json`, `tsconfig.json`, `src/app.ts`, and `src/server.ts`.
+
+API selection:
+
+```bash
+jsondb generate hono --api rest
+jsondb generate hono --api graphql
+jsondb generate hono --api rest,graphql
+jsondb generate hono --api none
+```
+
+SQLite generation rules:
+
+```txt
+collections -> SQLite tables with id TEXT PRIMARY KEY
+documents -> _jsondb_documents(name TEXT PRIMARY KEY, value TEXT)
+string/enum -> TEXT
+number -> REAL
+boolean -> INTEGER
+object/array/unknown -> JSON text in TEXT columns
+```
+
+Generation should fail on schema errors. For production SQLite output, warning diagnostics should also block generation unless `--allow-warnings` is provided. Seed insertion is disabled by default; `--seed fixtures` can emit fixture seed support for local SQLite mimicry.
+
+Keep Hono and SQLite runtime support isolated under optional exports:
+
+```txt
+json-fixture-db/hono
+json-fixture-db/sqlite
+```
+
+The core package must not add mandatory Hono or SQLite npm dependencies.
 
 Acceptance criteria:
 

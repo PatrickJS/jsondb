@@ -18,6 +18,14 @@
     "./client": {
       "types": "./src/index.d.ts",
       "default": "./src/client.js"
+    },
+    "./hono": {
+      "types": "./src/hono.d.ts",
+      "default": "./src/hono.js"
+    },
+    "./sqlite": {
+      "types": "./src/sqlite.d.ts",
+      "default": "./src/sqlite.js"
     }
   },
   "files": [

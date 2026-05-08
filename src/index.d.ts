@@ -62,6 +62,16 @@ export type JsonDbOptions = {
       message?: string;
     } | null;
   };
+  generate?: {
+    hono?: {
+      outDir?: string;
+      api?: Array<'rest' | 'graphql'> | 'rest' | 'graphql' | 'rest,graphql' | 'none';
+      db?: 'sqlite';
+      app?: 'standalone' | 'module';
+      runtime?: 'node-sqlite';
+      seed?: false | 'fixtures';
+    };
+  };
 };
 
 export type JsonDbCollection<RecordType> = {
@@ -148,6 +158,17 @@ export function createJsonDbClient(options?: JsonDbClientOptions): JsonDbClient;
 export function loadConfig(options?: JsonDbOptions): Promise<JsonDbOptions>;
 export function syncJsonFixtureDb(config: JsonDbOptions, options?: { allowErrors?: boolean }): Promise<unknown>;
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
+export function generateHonoStarter(
+  config: JsonDbOptions,
+  options?: {
+    outDir?: string;
+    api?: Array<'rest' | 'graphql'> | 'rest' | 'graphql' | 'rest,graphql' | 'none';
+    db?: 'sqlite';
+    app?: 'standalone' | 'module';
+    seed?: false | 'fixtures';
+    allowWarnings?: boolean;
+  },
+): Promise<{ outDir: string; files: string[]; diagnostics: unknown[] }>;
 export function startJsonDbServer(options?: JsonDbOptions): Promise<{ server: unknown; db: JsonFixtureDb; url: string }>;
 export function executeGraphql(
   db: JsonFixtureDb,
