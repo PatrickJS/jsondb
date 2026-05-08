@@ -10,7 +10,11 @@ Start with data in minutes, then tighten the model when product requirements cha
 
 ```bash
 mkdir -p db
-cat > db/users.json <<'JSON'
+```
+
+Create `db/users.json`:
+
+```json
 [
   {
     "id": "u_1",
@@ -18,8 +22,9 @@ cat > db/users.json <<'JSON'
     "email": "ada@example.com"
   }
 ]
-JSON
+```
 
+```bash
 npx json-fixture-db sync
 ```
 
