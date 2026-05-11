@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
@@ -26,6 +26,35 @@ test('data-first fixtures generate schema, types, and runtime state', async () =
   assert.equal(result.schema.resources.users.kind, 'collection');
   assert.match(await readFile(path.join(cwd, '.jsondb/types/index.ts'), 'utf8'), /export type User =/);
   assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8'))[0].id, 'u_1');
+});
+
+test('dbDir config changes the fixture source folder', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    dbDir: './jsondb',
+  };`);
+  await mkdir(path.join(cwd, 'jsondb'), { recursive: true });
+  await writeFile(path.join(cwd, 'jsondb/users.json'), `${JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ])}\n`, 'utf8');
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+  const metadata = JSON.parse(await readFile(path.join(cwd, '.jsondb/state/.sources.json'), 'utf8'));
+
+  assert.equal(config.dbDir, path.join(cwd, 'jsondb'));
+  assert.equal(config.sourceDir, path.join(cwd, 'jsondb'));
+  assert.equal(result.schema.resources.users.kind, 'collection');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8')), [
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]);
+  assert.equal(metadata.resources.users.path, 'jsondb/users.json');
 });
 
 test('schema-only fixtures generate types and initialize empty state', async () => {

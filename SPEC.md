@@ -179,7 +179,7 @@ Projects can customize the output location:
 
 ```js
 export default {
-  sourceDir: './db',
+  dbDir: './db',
   stateDir: './.jsondb',
 
   types: {
@@ -269,7 +269,7 @@ import { openJsonFixtureDb } from 'json-fixture-db';
 import type { JsonDbTypes } from './generated/jsondb.types';
 
 const db = await openJsonFixtureDb<JsonDbTypes>({
-  sourceDir: './db',
+  dbDir: './db',
   stateDir: './.jsondb',
   mode: 'mirror',
 });
@@ -538,7 +538,7 @@ Add this to `jsondb.config.mjs`:
 
 ```js
 export default {
-  sourceDir: './db',
+  dbDir: './db',
   stateDir: './.jsondb',
   mode: 'mirror',
 
@@ -586,6 +586,8 @@ export default {
   },
 };
 ```
+
+Set `dbDir: './jsondb'` to use `jsondb/` instead of the default `db/` fixture folder. Existing `sourceDir` configs remain supported; if both are provided, `sourceDir` wins for backwards compatibility.
 
 ## CLI
 
@@ -669,7 +671,7 @@ resource list
 collection table viewer
 singleton document JSON viewer
 selected JSON copy
-CSV drag-and-drop import into db/
+CSV drag-and-drop import into the configured fixture folder
 REST route specs with copy/paste examples
 REST request runner
 GraphQL SDL viewer
@@ -691,9 +693,9 @@ The viewer should support uploading a CSV through:
 POST /__jsondb/import
 ```
 
-The upload should copy the CSV into `db/`, run sync, reload the in-memory resources, update the URL query parameter to the imported resource, and reload the dashboard view.
+The upload should copy the CSV into the configured fixture folder, run sync, reload the in-memory resources, update the URL query parameter to the imported resource, and reload the dashboard view.
 
-While serving, jsondb should watch `db/` for fixture and schema changes, ignoring `.jsondb/`. On change, reload resources and notify the single-file viewer through `/__jsondb/events` so the dashboard refreshes automatically. If one source file fails to parse or load, report a file-specific diagnostic in the viewer and keep the remaining valid resources available.
+While serving, jsondb should watch the configured fixture folder for fixture and schema changes, ignoring `.jsondb/`. On change, reload resources and notify the single-file viewer through `/__jsondb/events` so the dashboard refreshes automatically. If one source file fails to parse or load, report a file-specific diagnostic in the viewer and keep the remaining valid resources available.
 
 GraphQL should support a dependency-free subset suitable for local app development:
 

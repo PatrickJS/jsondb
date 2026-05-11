@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { resolveFrom } from './fs-utils.js';
 
 export const DEFAULT_CONFIG = {
+  dbDir: './db',
   sourceDir: './db',
   stateDir: './.jsondb',
   mode: 'mirror',
@@ -81,7 +82,11 @@ export async function loadConfig(options = {}) {
   const merged = mergeDeep(mergeDeep(structuredClone(DEFAULT_CONFIG), userConfig), inlineOptions);
   merged.cwd = cwd;
   merged.configPath = configPath;
-  merged.sourceDir = resolveFrom(cwd, merged.sourceDir);
+  const sourceDir = hasOwnConfigValue(userConfig, 'sourceDir') || hasOwnConfigValue(inlineOptions, 'sourceDir')
+    ? merged.sourceDir
+    : merged.dbDir;
+  merged.sourceDir = resolveFrom(cwd, sourceDir);
+  merged.dbDir = merged.sourceDir;
   merged.stateDir = resolveFrom(cwd, merged.stateDir);
 
   if (merged.types?.outFile) {
@@ -132,4 +137,8 @@ export function mergeDeep(base, override) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasOwnConfigValue(config, key) {
+  return Object.prototype.hasOwnProperty.call(config, key) && config[key] !== undefined;
 }

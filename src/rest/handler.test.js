@@ -110,6 +110,25 @@ test('REST viewer import endpoint saves CSV fixtures and reloads resources', asy
   ]);
 });
 
+test('REST viewer import endpoint saves CSV fixtures to configured dbDir', async () => {
+  const cwd = await makeProject();
+  const db = await openJsonFixtureDb({ cwd, dbDir: './jsondb' });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRawRequest('POST', 'id,name\nu_1,Ada\n', {
+      'x-jsondb-file-name': 'Uploaded Users.csv',
+    }),
+    response,
+    new URL('http://jsondb.local/__jsondb/import'),
+  );
+
+  assert.equal(response.status, 201);
+  assert.equal(response.json().dataPath, 'jsondb/uploadedUsers.csv');
+  await access(path.join(cwd, 'jsondb/uploadedUsers.csv'));
+});
+
 test('REST viewer import endpoint rejects invalid CSV without writing a fixture', async () => {
   const cwd = await makeProject();
   const db = await openJsonFixtureDb({ cwd });

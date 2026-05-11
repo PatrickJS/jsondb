@@ -68,7 +68,16 @@ From your project root, jsondb uses `./db` by default:
 npx json-fixture-db serve
 ```
 
-`serve` syncs on startup and then watches `db/` for source changes.
+`serve` syncs on startup and then watches the fixture folder for source changes.
+If you want to keep fixtures somewhere else, set `dbDir` in `jsondb.config.mjs`:
+
+```js
+export default {
+  dbDir: './jsondb',
+};
+```
+
+Existing `sourceDir` configs still work; `dbDir` is the shorter fixture-folder name.
 
 Why this matters:
 
@@ -198,7 +207,7 @@ http://127.0.0.1:7331/__jsondb
 The viewer includes:
 
 - resource and data browsing
-- drag-and-drop CSV import into `db/`
+- drag-and-drop CSV import into the configured fixture folder
 - REST specs with copyable examples
 - a REST request runner
 - GraphQL SDL, query examples, and mutation examples
@@ -206,7 +215,7 @@ The viewer includes:
 - schema and field inspection
 - source diagnostics when one fixture file is broken
 
-While `jsondb serve` is running, jsondb watches `db/` for source changes, refreshes the runtime mirror, and notifies the viewer through `/__jsondb/events`. The viewer reloads automatically. If one source file is invalid, the viewer shows the file-specific error while the other valid resources keep working.
+While `jsondb serve` is running, jsondb watches the configured fixture folder for source changes, refreshes the runtime mirror, and notifies the viewer through `/__jsondb/events`. The viewer reloads automatically. If one source file is invalid, the viewer shows the file-specific error while the other valid resources keep working.
 
 ## REST And GraphQL
 
@@ -440,7 +449,7 @@ import { createJsonDbHonoApp } from 'json-fixture-db/hono';
 
 const app = new Hono();
 app.route('/api', await createJsonDbHonoApp({
-  sourceDir: './db',
+  dbDir: './db',
   storage: {
     kind: 'sqlite',
     file: './data/app.sqlite',
@@ -456,7 +465,7 @@ import { openJsonFixtureDb } from 'json-fixture-db';
 import type { JsonDbTypes } from './generated/jsondb.types';
 
 const db = await openJsonFixtureDb<JsonDbTypes>({
-  sourceDir: './db',
+  dbDir: './db',
   stateDir: './.jsondb',
   mode: 'mirror',
 });
@@ -475,7 +484,7 @@ You can also execute GraphQL directly through the package API:
 ```ts
 import { executeGraphql, openJsonFixtureDb } from 'json-fixture-db';
 
-const db = await openJsonFixtureDb({ sourceDir: './db' });
+const db = await openJsonFixtureDb({ dbDir: './db' });
 const result = await executeGraphql(db, {
   query: `{
     users {

@@ -6,6 +6,7 @@ export type JsonDbTypeMap = {
 export type JsonDbOptions = {
   cwd?: string;
   configPath?: string;
+  dbDir?: string;
   sourceDir?: string;
   stateDir?: string;
   mode?: 'mirror' | 'source';

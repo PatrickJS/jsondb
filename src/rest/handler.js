@@ -18,6 +18,7 @@ async function handleRestRequestUnsafe(db, request, response, url) {
   if (request.method === 'GET' && url.pathname === '/__jsondb') {
     sendText(response, 200, renderJsonDbViewer({
       graphqlPath: db.config.graphql?.path ?? '/graphql',
+      sourceDirLabel: sourceDirLabel(db.config),
     }), 'text/html; charset=utf-8');
     return;
   }
@@ -164,6 +165,11 @@ export async function readJsonBody(request, options = {}) {
 
 function maxBodyBytes(db) {
   return Number(db.config.server?.maxBodyBytes ?? 1048576);
+}
+
+function sourceDirLabel(config) {
+  const relative = path.relative(config.cwd, config.sourceDir) || '.';
+  return `${relative.split(path.sep).join('/')}/`;
 }
 
 async function importCsvFixture(db, request) {

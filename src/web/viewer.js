@@ -1,5 +1,6 @@
 export function renderJsonDbViewer(options = {}) {
   const graphqlPath = options.graphqlPath ?? '/graphql';
+  const sourceDirLabel = options.sourceDirLabel ?? 'db/';
   const buttonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:translate-y-px';
   const primaryButtonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:translate-y-px';
   const tabClass = 'inline-flex min-h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
@@ -56,7 +57,7 @@ export function renderJsonDbViewer(options = {}) {
         <div id="resource-list" class="grid gap-2"></div>
         <div id="csv-drop" class="${importDropClass}">
           <div class="font-semibold text-slate-800">Import CSV</div>
-          <p class="mb-3 mt-1 text-xs text-slate-500">Drop a CSV file here to copy it into db/, sync the mirror, and open the new resource.</p>
+          <p class="mb-3 mt-1 text-xs text-slate-500">Drop a CSV file here to copy it into ${escapeHtml(sourceDirLabel)}, sync the mirror, and open the new resource.</p>
           <button type="button" id="csv-pick" class="${buttonClass}">Choose CSV</button>
           <input id="csv-file" type="file" accept=".csv,text/csv" class="hidden">
           <div id="csv-import-status" class="mt-3 text-xs text-slate-500"></div>
@@ -874,4 +875,13 @@ export function renderJsonDbViewer(options = {}) {
   </script>
 </body>
 </html>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }

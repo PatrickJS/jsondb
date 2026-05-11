@@ -22,10 +22,20 @@ test('web viewer renders the jsondb tool surface', () => {
   assert.match(html, /Earlier successful writes stay committed/);
   assert.match(html, /const BUTTON_CLASS =/);
   assert.match(html, /Import CSV/);
+  assert.match(html, /copy it into db\//);
   assert.match(html, /id="csv-drop"/);
   assert.match(html, /id="diagnostics-view"/);
   assert.match(html, /\/__jsondb\/import/);
   assert.match(html, /x-jsondb-file-name/);
+});
+
+test('web viewer renders configured fixture folder label', () => {
+  const html = renderJsonDbViewer({
+    graphqlPath: '/graphql',
+    sourceDirLabel: 'jsondb/',
+  });
+
+  assert.match(html, /copy it into jsondb\//);
 });
 
 test('web viewer local CSS does not override Tailwind layout utilities', () => {
