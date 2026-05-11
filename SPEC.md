@@ -719,6 +719,17 @@ schema and field inspection
 diagnostics summary
 ```
 
+The CLI should include a fixture health check:
+
+```txt
+jsondb doctor
+jsondb doctor --json
+jsondb doctor --strict
+jsondb check --strict
+```
+
+`doctor` should include existing source/schema diagnostics and advisory fixture findings. It should detect duplicate collection ids, mixed id value types, inconsistent field value types, likely relation fields such as `todos.userId -> users.id`, and likely relation values missing from a target collection. Relation inference must be suggestive only; it must not mutate fixtures, write schema files, or silently change REST/GraphQL shape behavior. `doctor` should exit nonzero for error diagnostics, while `--strict` should also exit nonzero for warnings. Informational relation suggestions should not fail strict mode.
+
 CSV data-first fixtures should be treated as collections. The first row is the header row, headers become JSON field names, values are parsed into records, and the runtime mirror is written as `.jsondb/state/<resource>.json`. When a CSV data file is paired with a schema file, schema-declared array fields should coerce semicolon-delimited cells and JSON array string cells into arrays before validation and mirror sync.
 
 Collection fixtures should always have an id field. If a JSON/JSONC/CSV collection source omits `id`, generate counter ids in the runtime mirror, starting at `"1"` and avoiding existing ids. In default `mode: 'mirror'`, source files stay unchanged. In non-mirror source mode, write generated ids back to plain `.json` fixtures.
