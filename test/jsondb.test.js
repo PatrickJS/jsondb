@@ -28,6 +28,13 @@ test('data-first fixtures generate schema, types, and runtime state', async () =
   assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8'))[0].id, 'u_1');
 });
 
+test('default config adds a small local mock delay range', async () => {
+  const cwd = await makeProject();
+  const config = await loadConfig({ cwd });
+
+  assert.deepEqual(config.mock.delay, [30, 100]);
+});
+
 test('dbDir config changes the fixture source folder', async () => {
   const cwd = await makeProject();
   await writeConfig(cwd, `export default {
@@ -55,6 +62,38 @@ test('dbDir config changes the fixture source folder', async () => {
     },
   ]);
   assert.equal(metadata.resources.users.path, 'jsondb/users.json');
+});
+
+test('config files can use the typed defineConfig helper', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  mode: 'mirror',
+  mock: {
+    delay: [75, 250],
+  },
+});
+`);
+
+  const config = await loadConfig({ cwd });
+
+  assert.equal(config.mode, 'mirror');
+  assert.deepEqual(config.mock.delay, [75, 250]);
+});
+
+test('consumer projects can import package APIs through the jsondb alias', async () => {
+  const cwd = await makeProject();
+  await writeFile(path.join(cwd, 'check-alias.mjs'), `import { openJsonFixtureDb } from 'jsondb';
+import { createJsonDbClient } from 'jsondb/client';
+import { defineConfig } from 'jsondb/config';
+
+if (typeof openJsonFixtureDb !== 'function') throw new Error('missing package API');
+if (typeof createJsonDbClient !== 'function') throw new Error('missing client API');
+if (typeof defineConfig !== 'function') throw new Error('missing config API');
+`);
+
+  await execFileAsync(process.execPath, ['check-alias.mjs'], { cwd });
 });
 
 test('schema-only fixtures generate types and initialize empty state', async () => {
@@ -220,7 +259,7 @@ test('package API duplicate ids produce actionable errors', async () => {
 
 test('.schema.mjs files can use schema helpers', async () => {
   const cwd = await makeProject();
-  await writeFixture(cwd, 'users.schema.mjs', `import { collection, field } from 'json-fixture-db/schema';
+  await writeFixture(cwd, 'users.schema.mjs', `import { collection, field } from 'jsondb/schema';
 
 export default collection({
   idField: 'id',

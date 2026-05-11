@@ -7,6 +7,7 @@ export async function makeProject() {
   await mkdir(path.join(cwd, 'db'), { recursive: true });
   await mkdir(path.join(cwd, 'node_modules'), { recursive: true });
   await symlink(path.resolve('.'), path.join(cwd, 'node_modules', 'json-fixture-db'), 'dir');
+  await symlink(path.resolve('.'), path.join(cwd, 'node_modules', 'jsondb'), 'dir');
   return cwd;
 }
 

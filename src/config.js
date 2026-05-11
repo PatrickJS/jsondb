@@ -46,7 +46,7 @@ export const DEFAULT_CONFIG = {
     path: '/graphql',
   },
   mock: {
-    delay: null,
+    delay: [30, 100],
     errors: null,
   },
   generate: {

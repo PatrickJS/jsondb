@@ -13,6 +13,17 @@ test('mock delay supports range arrays', () => {
   assert.equal(pickDelayMs(delay, () => 1), 300);
 });
 
+test('mock delay supports disabled and fixed values', () => {
+  assert.deepEqual(normalizeMockDelay(0), {
+    minMs: 0,
+    maxMs: 0,
+  });
+  assert.deepEqual(normalizeMockDelay(50), {
+    minMs: 50,
+    maxMs: 50,
+  });
+});
+
 test('mock errors can force chaos responses', async () => {
   const result = await runMockBehavior({
     mock: {

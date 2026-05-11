@@ -15,6 +15,10 @@
       "types": "./src/schema.d.ts",
       "default": "./src/schema-builders.js"
     },
+    "./config": {
+      "types": "./src/config.d.ts",
+      "default": "./src/config-public.js"
+    },
     "./client": {
       "types": "./src/index.d.ts",
       "default": "./src/client.js"
@@ -37,6 +41,7 @@
     "examples/*/db/**",
     "examples/*/jsondb.config.mjs",
     "examples/*/src/generated/**",
+    "jsondb.config.example.mjs",
     "README.md",
     "SPEC.md"
   ],
