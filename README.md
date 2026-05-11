@@ -1,19 +1,19 @@
 # jsondb
 
-A local JSON fixture database for app development and tests. Put files in `db/`, browse them in a built-in data viewer, and call a local REST API without standing up a backend. It also generates TypeScript types and includes a focused GraphQL endpoint when you need it, but the default workflow is REST-first and configuration-light.
+A local JSON fixture database for app development and tests. Use it as a rapid prototyping layer before the real database or backend contract is settled, so the codebase can follow familiar data access patterns while the team learns the shape of the product. Put files in `db/`, browse them in a built-in data viewer, and call a local REST API without standing up a backend. It also generates TypeScript types and includes a focused GraphQL endpoint when you need it, but the default workflow is REST-first and configuration-light.
 
 ## Summary
 
 Most projects should start with the happy path defaults:
 
 1. Put JSON, JSONC, or CSV fixtures in `db/`.
-2. Run `npm run jsondb:sync` to generate `.jsondb/state`, schema metadata, and TypeScript types.
-3. Run `npm run jsondb:serve` to start the local API and data viewer.
+2. Run `npm run db:sync` to generate `.jsondb/state`, schema metadata, and TypeScript types.
+3. Run `npm run db:serve` to start the local API and data viewer.
 4. Open `http://127.0.0.1:7331/__jsondb` to inspect data, import CSVs, read REST docs, and try requests.
 5. Point your app or tests at REST routes like `GET /users` and `POST /users`. GraphQL is available at `/graphql`, but you do not need it to get the core workflow.
 6. Add schema files only when you need required fields, defaults, enums, descriptions, or stricter validation.
 
-That is the main value: fixture files become a browsable local data source and a writable REST API with no config.
+That is the main value: fixture files become a browsable local data source and a writable REST API with no config, giving teams a realistic mock while the eventual database is still unknown.
 
 By default jsondb runs in `mode: 'mirror'`, so app writes go into `.jsondb/state` and source fixtures stay clean. Switch to `mode: 'source'` only when you intentionally want jsondb to write generated ids back to plain `.json` fixtures.
 
@@ -29,10 +29,10 @@ Until this package is published, install it from GitHub in the app or package th
     "jsondb": "github:PatrickJS/jsondb"
   },
   "scripts": {
-    "jsondb": "jsondb",
-    "jsondb:sync": "jsondb sync",
-    "jsondb:serve": "jsondb serve",
-    "jsondb:types": "jsondb types"
+    "db": "jsondb",
+    "db:sync": "jsondb sync",
+    "db:serve": "jsondb serve",
+    "db:types": "jsondb types"
   }
 }
 ```
@@ -60,13 +60,13 @@ Create `db/users.json`:
 Sync the runtime mirror and generated types:
 
 ```bash
-npm run jsondb:sync
+npm run db:sync
 ```
 
 Start the local API and viewer:
 
 ```bash
-npm run jsondb:serve
+npm run db:serve
 ```
 
 Open the data viewer:
@@ -103,11 +103,12 @@ Use this table to start with defaults and then jump to the config only when a us
 
 | Use case                                | Start with                                                                  | Add config when                                                                                        |
 | --------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Browse and sanity-check local data      | `db/*.json`, `npm run jsondb:serve`, and the [data viewer](#data-viewer)    | Fixtures live outside `db/`: [different fixture folder](#different-fixture-folder)                     |
+| Browse and sanity-check local data      | `db/*.json`, `npm run db:serve`, and the [data viewer](#data-viewer)        | Fixtures live outside `db/`: [different fixture folder](#different-fixture-folder)                     |
 | Prototype UI before the backend exists  | Default fixtures plus [REST API](#rest-api) calls from the app              | Adjust the default 30-100ms delay: [mock delay and errors](#mock-delay-and-errors)                    |
 | Share local data across tests and demos | Default sync output in `.jsondb/state`                                      | Test imports need stable generated types: [committed generated types](#committed-generated-types)      |
 | Import spreadsheet or product data      | `db/*.csv` or viewer CSV import                                             | CSVs belong in another folder: [different fixture folder](#different-fixture-folder)                   |
 | Evolve fuzzy data into a contract       | Add `db/<name>.schema.json` or `.schema.jsonc`                              | Schema drift should fail instead of warn: [schema strictness](#schema-strictness)                      |
+| Find fixture consistency issues         | `npm run db -- doctor`                                                      | CI should fail on warnings: `npm run db -- check --strict`                                            |
 | Start from types before records exist   | Schema-first fixtures with empty `seed`                                     | You want mock records generated from schema: [generated schema seed data](#generated-schema-seed-data) |
 | Exercise larger local payloads          | Default server settings                                                     | Requests exceed the local body limit: [server options](#server-options)                                |
 | Graduate fixtures into a real service   | Stable schema-backed fixtures                                               | Generate a starter: [Hono and SQLite starter generation](#hono-and-sqlite-starter-generation)          |
@@ -205,7 +206,7 @@ Create `db/users.schema.json`:
 Then validate:
 
 ```bash
-npm run jsondb -- schema validate
+npm run db -- schema validate
 ```
 
 In mixed mode, schema files define the contract and data files provide seed records:
@@ -259,7 +260,7 @@ id,name,email,active
 u_1,Ada Lovelace,ada@example.com,true
 ```
 
-`npm run jsondb -- sync` parses the header row, infers a collection schema, and writes `.jsondb/state/users.json`. Source hashes are tracked so changed source fixtures refresh the runtime mirror, while unchanged source fixtures preserve runtime edits.
+`npm run db -- sync` parses the header row, infers a collection schema, and writes `.jsondb/state/users.json`. Source hashes are tracked so changed source fixtures refresh the runtime mirror, while unchanged source fixtures preserve runtime edits.
 
 When a CSV is paired with a schema file, array fields stay arrays in the runtime mirror. For example, a schema field like `"tags": { "type": "array", "items": { "type": "string" } }` accepts a CSV cell such as `renewal;priority` or a JSON array string such as `["renewal","priority"]` and writes `["renewal", "priority"]` to state.
 
@@ -324,20 +325,20 @@ TypeScript schema files are intentionally not loaded directly in v1 because Node
 
 ## CLI
 
-With the `jsondb` script from the install snippet, run commands through npm:
+With the `db` script from the install snippet, run commands through npm:
 
 ```bash
-npm run jsondb -- sync
-npm run jsondb -- types
-npm run jsondb -- types --watch
-npm run jsondb -- types --out ./src/generated/jsondb.types.ts
-npm run jsondb -- schema
-npm run jsondb -- schema users
-npm run jsondb -- schema validate
-npm run jsondb -- create users '{"id":"u_2","name":"Grace Hopper","email":"grace@example.com"}'
-npm run jsondb -- serve
-npm run jsondb -- generate hono
-npm run jsondb -- generate hono --api rest,graphql --out ./server
+npm run db -- sync
+npm run db -- types
+npm run db -- types --watch
+npm run db -- types --out ./src/generated/jsondb.types.ts
+npm run db -- schema
+npm run db -- schema users
+npm run db -- schema validate
+npm run db -- create users '{"id":"u_2","name":"Grace Hopper","email":"grace@example.com"}'
+npm run db -- serve
+npm run db -- generate hono
+npm run db -- generate hono --api rest,graphql --out ./server
 ```
 
 Inside npm scripts, `jsondb` resolves to the local dependency binary. The equivalent binary commands are:
@@ -393,6 +394,33 @@ The viewer includes:
 - GraphQL SDL and operation references
 - schema and field inspection
 - source diagnostics when one fixture file is broken
+
+## Fixture Doctor
+
+Use `doctor` when plain fixtures are starting to act like a small local data model and you want consistency suggestions:
+
+```bash
+npm run db -- doctor
+```
+
+It reports existing schema/source diagnostics plus advisory fixture health findings such as:
+
+- likely relations, for example `todos.userId -> users.id`
+- duplicate ids inside a collection
+- mixed id value types like `"1"` and `1`
+- inconsistent field types like `done: true` and `done: "yes"`
+- likely relation fields with values missing from the target collection
+
+Relation inference is only a suggestion. It does not rewrite schema files and it does not make `?expand=user` work until you add explicit relation metadata.
+
+For scripts or CI, use JSON output or strict mode:
+
+```bash
+npm run db -- doctor --json
+npm run db -- check --strict
+```
+
+`doctor` exits nonzero for error diagnostics. `--strict` also exits nonzero for warnings. Informational suggestions do not fail strict mode.
 
 ## REST API
 
@@ -641,9 +669,9 @@ For apps and CI, you can also configure a [committed generated types](#committed
 When fixtures and schemas have settled enough to graduate toward a real database API, generate a Hono starter:
 
 ```bash
-npm run jsondb -- generate hono
-npm run jsondb -- generate hono --api rest,graphql --out ./server
-npm run jsondb -- generate hono --api none --app module
+npm run db -- generate hono
+npm run db -- generate hono --api rest,graphql --out ./server
+npm run db -- generate hono --api none --app module
 ```
 
 The default output is `./jsondb-api` with REST routes, a portable repository interface, a `node:sqlite` adapter, validators, and an initial SQL migration. Generated standalone apps are TypeScript-first and target Node.js `>=22.13` because SQLite output uses `node:sqlite`.

@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
-import { openJsonFixtureDb, syncJsonFixtureDb, loadConfig, loadProjectSchema, generateTypes } from '../src/index.js';
+import { openJsonFixtureDb, syncJsonFixtureDb, loadConfig, loadProjectSchema, generateTypes, runJsonDbDoctor } from '../src/index.js';
 import { makeProject, writeConfig, writeFixture } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
@@ -262,6 +262,76 @@ test('schema validation reports missing required relation targets', async () => 
   assert.equal(relationDiagnostics[0].resource, 'posts');
   assert.equal(relationDiagnostics[0].field, 'authorId');
   assert.match(relationDiagnostics[0].message, /missing_author/);
+});
+
+test('doctor suggests likely relations without changing schema shape', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    { id: '1', name: 'Ada Lovelace' },
+  ]));
+  await writeFixture(cwd, 'todos.json', JSON.stringify([
+    { id: 't_1', title: 'Ship prototype', userId: '1' },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+  const project = await loadProjectSchema(config);
+  const suggestion = result.findings.find((finding) => finding.code === 'DOCTOR_RELATION_SUGGESTION');
+
+  assert.equal(suggestion.severity, 'info');
+  assert.equal(suggestion.resource, 'todos');
+  assert.equal(suggestion.field, 'userId');
+  assert.match(suggestion.message, /todos\.userId -> users\.id/);
+  assert.deepEqual(suggestion.details.suggestedRelation, {
+    name: 'user',
+    to: 'users',
+    toField: 'id',
+    cardinality: 'one',
+  });
+  assert.deepEqual(project.schema.resources.todos.relations, []);
+});
+
+test('doctor reports duplicate ids and inconsistent field types', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'todos.json', JSON.stringify([
+    { id: 't_1', title: 'One', done: true },
+    { id: 't_1', title: 'Two', done: 'yes' },
+    { id: 3, title: 'Three', done: false },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+
+  assert.equal(result.summary.warn, 3);
+  assert.equal(result.summary.error, 0);
+  assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_DUPLICATE_ID'), true);
+  assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_MIXED_ID_TYPES'), true);
+  assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_INCONSISTENT_FIELD_TYPES' && finding.field === 'done'), true);
+});
+
+test('doctor CLI supports json output and strict check alias', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'todos.json', JSON.stringify([
+    { id: 't_1', done: true },
+    { id: 't_1', done: 'yes' },
+  ]));
+
+  const { stdout } = await execFileAsync(process.execPath, ['./src/cli.js', 'doctor', '--json', '--cwd', cwd], {
+    cwd: path.resolve('.'),
+  });
+  const result = JSON.parse(stdout);
+
+  assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_DUPLICATE_ID'), true);
+  await assert.rejects(
+    () => execFileAsync(process.execPath, ['./src/cli.js', 'check', '--strict', '--cwd', cwd], {
+      cwd: path.resolve('.'),
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stdout, /DOCTOR_DUPLICATE_ID/);
+      return true;
+    },
+  );
 });
 
 test('.schema.mjs helpers expose nullable datetime and flexible objects', async () => {
