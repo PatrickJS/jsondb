@@ -416,6 +416,12 @@ REST examples:
 curl http://127.0.0.1:7331/users
 ```
 
+Use `select`, `offset`, and `limit` when a prototype only needs part of a collection:
+
+```bash
+curl 'http://127.0.0.1:7331/users?select=id,name&offset=0&limit=20'
+```
+
 ```bash
 curl http://127.0.0.1:7331/users/u_1
 ```
@@ -435,6 +441,33 @@ curl -X PATCH http://127.0.0.1:7331/users/u_2 \
 ```bash
 curl -X DELETE http://127.0.0.1:7331/users/u_2
 ```
+
+### Relationship Expansion
+
+Schema-backed scalar fields can declare relation metadata while fixtures keep plain ids:
+
+```json
+{
+  "authorId": {
+    "type": "string",
+    "required": true,
+    "relation": {
+      "name": "author",
+      "to": "users",
+      "toField": "id",
+      "cardinality": "one"
+    }
+  }
+}
+```
+
+Then REST can explicitly expand that to-one relation:
+
+```bash
+curl 'http://127.0.0.1:7331/posts/p_1?expand=author&select=id,title,author.name'
+```
+
+`select` supports top-level fields and one nested expanded relation field. Relation expansion is depth 1 in this MVP, and reverse to-many expansion is intentionally deferred.
 
 jsondb also exposes a dependency-free GraphQL subset at `/graphql` for apps that prefer GraphQL. This README stays REST-first because REST plus the data viewer is the intended default path.
 
@@ -538,6 +571,45 @@ const batch = await client.rest.batch([
 ```
 
 The client can batch requests made within a short timeout. The default batching window is `10ms`. Identical REST `GET` requests are deduped by default, while writes are not deduped unless you explicitly choose `dedupe: 'all'`.
+
+## Vite Dev Server Plugin
+
+Vite and Void apps can mount jsondb into the existing dev server instead of running `jsondb serve` on a second port:
+
+```js
+import { defineConfig } from 'vite';
+import { jsondbPlugin } from 'jsondb/vite';
+
+export default defineConfig({
+  plugins: [
+    jsondbPlugin(),
+  ],
+});
+```
+
+The plugin is dev-only (`apply: 'serve'`). It does not run during `vite build` or `void deploy`, and it does not add a mandatory Vite or Void dependency to jsondb.
+
+By default, dev routes are scoped so they do not steal app URLs:
+
+```txt
+GET  /__jsondb
+GET  /__jsondb/schema
+POST /__jsondb/batch
+POST /__jsondb/graphql
+GET  /__jsondb/rest/users
+GET  /__jsondb/rest/users/u_1
+```
+
+Use the virtual browser client from app code when you want the same scoped paths:
+
+```ts
+import jsondb from 'virtual:jsondb/client';
+
+const users = await jsondb.rest.get('/users');
+const selected = await jsondb.rest.get('/users?select=id,name');
+```
+
+Plugin options include `cwd`, `dbDir`, `stateDir`, `apiBase`, `restBasePath`, `graphqlPath`, `rootRoutes`, and `clientVirtualModule`. Set `rootRoutes: true` only when you intentionally want Vite dev to also answer unscoped routes like `/users`; standalone `jsondb serve` keeps those root REST routes by default.
 
 ## Type Generation
 

@@ -169,6 +169,101 @@ test('schema fields support nullable datetime arrays and flexible object shapes'
   assert.deepEqual(state[0].tags, ['renewal', 'priority']);
 });
 
+test('schema fields can declare to-one relation metadata', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'authors.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [
+      { "id": "a_1", "name": "Ada Lovelace" }
+    ]
+  }`);
+  await writeFixture(cwd, 'posts.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "title": { "type": "string", "required": true },
+      "authorId": {
+        "type": "string",
+        "required": true,
+        "relation": {
+          "name": "author",
+          "to": "authors",
+          "toField": "id",
+          "cardinality": "one"
+        }
+      }
+    },
+    "seed": [
+      { "id": "p_1", "title": "Intro", "authorId": "a_1" }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+
+  assert.deepEqual(result.schema.resources.posts.relations, [
+    {
+      name: 'author',
+      sourceResource: 'posts',
+      sourceField: 'authorId',
+      targetResource: 'authors',
+      targetField: 'id',
+      cardinality: 'one',
+    },
+  ]);
+  assert.deepEqual(result.schema.relations, result.schema.resources.posts.relations);
+  assert.deepEqual(result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'), []);
+});
+
+test('schema validation reports missing required relation targets', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'authors.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": []
+  }`);
+  await writeFixture(cwd, 'posts.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "authorId": {
+        "type": "string",
+        "required": true,
+        "relation": {
+          "name": "author",
+          "to": "authors",
+          "toField": "id",
+          "cardinality": "one"
+        }
+      }
+    },
+    "seed": [
+      { "id": "p_1", "authorId": "missing_author" }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+  const relationDiagnostics = project.diagnostics.filter((diagnostic) => diagnostic.code === 'SCHEMA_RELATION_TARGET_MISSING');
+
+  assert.equal(relationDiagnostics.length, 1);
+  assert.equal(relationDiagnostics[0].severity, 'error');
+  assert.equal(relationDiagnostics[0].resource, 'posts');
+  assert.equal(relationDiagnostics[0].field, 'authorId');
+  assert.match(relationDiagnostics[0].message, /missing_author/);
+});
+
 test('.schema.mjs helpers expose nullable datetime and flexible objects', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'charts.schema.mjs', `

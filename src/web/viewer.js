@@ -1,5 +1,10 @@
 export function renderJsonDbViewer(options = {}) {
   const graphqlPath = options.graphqlPath ?? '/graphql';
+  const schemaPath = options.schemaPath ?? '/__jsondb/schema';
+  const eventsPath = options.eventsPath ?? '/__jsondb/events';
+  const importPath = options.importPath ?? '/__jsondb/import';
+  const restBatchPath = options.restBatchPath ?? '/__jsondb/batch';
+  const restBasePath = options.restBasePath ?? '';
   const sourceDirLabel = options.sourceDirLabel ?? 'db/';
   const buttonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:translate-y-px';
   const primaryButtonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:translate-y-px';
@@ -184,6 +189,11 @@ export function renderJsonDbViewer(options = {}) {
 
   <script>
     const GRAPHQL_PATH = ${JSON.stringify(graphqlPath)};
+    const SCHEMA_PATH = ${JSON.stringify(schemaPath)};
+    const EVENTS_PATH = ${JSON.stringify(eventsPath)};
+    const IMPORT_PATH = ${JSON.stringify(importPath)};
+    const REST_BATCH_PATH = ${JSON.stringify(restBatchPath)};
+    const REST_BASE_PATH = ${JSON.stringify(restBasePath)};
     const BUTTON_CLASS = ${JSON.stringify(buttonClass)};
     const TAB_CLASS = ${JSON.stringify(tabClass)};
     const ACTIVE_TAB_CLASS = ${JSON.stringify(activeTabClass)};
@@ -287,7 +297,7 @@ export function renderJsonDbViewer(options = {}) {
     connectLiveReload();
 
     async function boot(preferredResourceName) {
-      state.schema = await fetchJson('/__jsondb/schema');
+      state.schema = await fetchJson(SCHEMA_PATH);
       state.resources = Object.entries(state.schema.resources || {}).map(([name, resource]) => ({
         name,
         ...resource,
@@ -393,7 +403,7 @@ export function renderJsonDbViewer(options = {}) {
     function renderData() {
       const data = state.selectedData;
       if (Array.isArray(data)) {
-        els.dataView.innerHTML = renderTable(data);
+        els.dataView.innerHTML = renderTable(data, state.selected);
         return;
       }
 
@@ -401,7 +411,7 @@ export function renderJsonDbViewer(options = {}) {
       els.dataView.querySelector('pre').textContent = pretty(data);
     }
 
-    function renderTable(records) {
+    function renderTable(records, resource) {
       if (records.length === 0) {
         return '<div class="' + MUTED_CLASS + '">[]</div>';
       }
@@ -412,7 +422,7 @@ export function renderJsonDbViewer(options = {}) {
       }, new Set()));
 
       const head = columns.map((column) => '<th class="' + TH_CLASS + '">' + escapeHtml(column) + '</th>').join('');
-      const rows = records.map((record) => '<tr>' + columns.map((column) => '<td class="' + TD_CLASS + '">' + escapeHtml(formatCell(record[column])) + '</td>').join('') + '</tr>').join('');
+      const rows = records.map((record) => '<tr>' + columns.map((column) => '<td class="' + TD_CLASS + '">' + cellHtml(resource, record, column) + '</td>').join('') + '</tr>').join('');
       return '<div class="' + TABLE_WRAP_CLASS + '"><table class="' + TABLE_CLASS + '"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
@@ -440,9 +450,9 @@ export function renderJsonDbViewer(options = {}) {
 
     function renderFields() {
       const rows = Object.entries(state.selected.fields || {}).map(([name, field]) => {
-        return '<tr><td class="' + TD_CLASS + '">' + escapeHtml(name) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(fieldType(field)) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(field.required ? 'yes' : 'no') + '</td><td class="' + TD_CLASS + '">' + escapeHtml(field.description || '') + '</td></tr>';
+        return '<tr><td class="' + TD_CLASS + '">' + escapeHtml(name) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(fieldType(field)) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(field.required ? 'yes' : 'no') + '</td><td class="' + TD_CLASS + '">' + escapeHtml(relationTextForField(name)) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(field.description || '') + '</td></tr>';
       }).join('');
-      els.fieldView.innerHTML = '<div class="' + TABLE_WRAP_CLASS + '"><table class="' + TABLE_CLASS + '"><thead><tr><th class="' + TH_CLASS + '">Field</th><th class="' + TH_CLASS + '">Type</th><th class="' + TH_CLASS + '">Required</th><th class="' + TH_CLASS + '">Description</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      els.fieldView.innerHTML = relationSummary(state.selected) + '<div class="' + TABLE_WRAP_CLASS + '"><table class="' + TABLE_CLASS + '"><thead><tr><th class="' + TH_CLASS + '">Field</th><th class="' + TH_CLASS + '">Type</th><th class="' + TH_CLASS + '">Required</th><th class="' + TH_CLASS + '">Relation</th><th class="' + TH_CLASS + '">Description</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
     function exampleView(example, kind) {
@@ -515,14 +525,18 @@ export function renderJsonDbViewer(options = {}) {
       }
 
       const id = sampleId(resource);
-      return [
+      const examples = [
         { name: 'List records', method: 'GET', path },
+        { name: 'List selected fields', method: 'GET', path: path + '?select=' + encodeURIComponent(selectExampleFields(resource).join(',')) },
+        { name: 'List page', method: 'GET', path: path + '?offset=0&limit=20' },
         { name: 'Read record', method: 'GET', path: path + '/' + encodeURIComponent(id) },
         { name: 'Create record', method: 'POST', path, body: sampleRecord(resource, { id: nextRecordId(resource) }) },
         { name: 'Patch record', method: 'PATCH', path: path + '/' + encodeURIComponent(id), body: samplePatch(resource) },
         { name: 'Delete record', method: 'DELETE', path: path + '/' + encodeURIComponent(id) },
-        { name: 'Batch list and schema', method: 'POST', path: '/__jsondb/batch', body: [{ method: 'GET', path }, { method: 'GET', path: '/__jsondb/schema' }] },
+        { name: 'Batch list and schema', method: 'POST', path: REST_BATCH_PATH, body: [{ method: 'GET', path }, { method: 'GET', path: SCHEMA_PATH }] },
       ];
+      examples.splice(4, 0, ...relationRestExamples(resource, id));
+      return examples;
     }
 
     function graphqlExamplesFor(resource) {
@@ -611,6 +625,26 @@ export function renderJsonDbViewer(options = {}) {
       return resource.name + '_1';
     }
 
+    function selectExampleFields(resource) {
+      const names = Object.keys(resource.fields || {}).slice(0, 3);
+      return names.length > 0 ? names : [resource.idField || 'id'];
+    }
+
+    function relationRestExamples(resource, id) {
+      const relation = (resource.relations || [])[0];
+      if (!relation) {
+        return [];
+      }
+
+      const target = state.resources.find((candidate) => candidate.name === relation.targetResource);
+      const targetField = Object.keys(target?.fields || {}).find((name) => name !== target.idField) || relation.targetField;
+      const baseFields = selectExampleFields(resource).filter((name) => !name.includes('.')).slice(0, 2);
+      return [
+        { name: 'List with ' + relation.name, method: 'GET', path: resourcePath(resource) + '?expand=' + encodeURIComponent(relation.name) },
+        { name: 'Read selected ' + relation.name, method: 'GET', path: resourcePath(resource) + '/' + encodeURIComponent(id) + '?expand=' + encodeURIComponent(relation.name) + '&select=' + encodeURIComponent([...baseFields, relation.name + '.' + targetField].join(',')) },
+      ];
+    }
+
     function nextRecordId(resource) {
       const data = state.selected?.name === resource.name && Array.isArray(state.selectedData)
         ? state.selectedData
@@ -643,7 +677,39 @@ export function renderJsonDbViewer(options = {}) {
     }
 
     function resourcePath(resource) {
-      return resource.routePath || '/' + resource.name;
+      return joinPaths(REST_BASE_PATH, resource.routePath || '/' + resource.name);
+    }
+
+    function relationForField(resource, fieldName) {
+      return (resource?.relations || []).find((relation) => relation.sourceField === fieldName) || null;
+    }
+
+    function relationTextForField(fieldName) {
+      const relation = relationForField(state.selected, fieldName);
+      return relation ? relation.name + ' -> ' + relation.targetResource + '.' + relation.targetField : '';
+    }
+
+    function relationSummary(resource) {
+      const relations = resource?.relations || [];
+      if (relations.length === 0) {
+        return '<div class="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"><strong class="text-slate-900">Relations</strong><div>No explicit relations declared.</div></div>';
+      }
+
+      const rows = relations.map((relation) => '<tr><td class="' + TD_CLASS + '">' + escapeHtml(relation.name) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(relation.sourceField) + '</td><td class="' + TD_CLASS + '">' + escapeHtml(relation.targetResource + '.' + relation.targetField) + '</td><td class="' + TD_CLASS + '"><code>expand=' + escapeHtml(relation.name) + '</code></td></tr>').join('');
+      return '<div class="mb-3"><h4 class="mb-2 text-sm font-bold tracking-normal text-slate-950">Relations</h4><div class="' + TABLE_WRAP_CLASS + '"><table class="' + TABLE_CLASS + '"><thead><tr><th class="' + TH_CLASS + '">Name</th><th class="' + TH_CLASS + '">Source</th><th class="' + TH_CLASS + '">Target</th><th class="' + TH_CLASS + '">REST</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    }
+
+    function cellHtml(resource, record, column) {
+      const relation = relationForField(resource, column);
+      const value = record?.[column];
+      if (!relation || value === undefined || value === null || value === '') {
+        return escapeHtml(formatCell(value));
+      }
+
+      const target = state.resources.find((candidate) => candidate.name === relation.targetResource);
+      const targetPath = target ? resourcePath(target) : joinPaths(REST_BASE_PATH, '/' + relation.targetResource);
+      const href = targetPath + '/' + encodeURIComponent(value);
+      return '<a data-relation-link href="' + escapeHtml(href) + '" class="font-semibold text-emerald-700 hover:underline">' + escapeHtml(formatCell(value)) + '</a>';
     }
 
     function routeText(resource) {
@@ -713,7 +779,7 @@ export function renderJsonDbViewer(options = {}) {
         return;
       }
 
-      const events = new EventSource('/__jsondb/events');
+      const events = new EventSource(EVENTS_PATH);
       events.addEventListener('jsondb', (event) => {
         const payload = JSON.parse(event.data);
         if (payload.type === 'connected') {
@@ -740,7 +806,7 @@ export function renderJsonDbViewer(options = {}) {
 
       setImportStatus('Importing ' + file.name + '...', 'loading');
       try {
-        const response = await fetch('/__jsondb/import', {
+        const response = await fetch(IMPORT_PATH, {
           method: 'POST',
           headers: {
             'content-type': 'text/csv; charset=utf-8',
@@ -847,6 +913,16 @@ export function renderJsonDbViewer(options = {}) {
         throw new Error('Request failed: ' + response.status + ' ' + path);
       }
       return response.json();
+    }
+
+    function joinPaths(basePath, routePath) {
+      if (!basePath) {
+        return routePath;
+      }
+
+      const base = '/' + String(basePath).replace(/^\\/+/, '').replace(/\\/+$/, '');
+      const route = '/' + String(routePath || '/').replace(/^\\/+/, '');
+      return base + (route === '/' ? '' : route);
     }
 
     async function copyText(text) {

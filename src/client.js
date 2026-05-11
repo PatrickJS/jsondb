@@ -2,6 +2,7 @@ import { jsonDbError } from './errors.js';
 
 export function createJsonDbClient(options = {}) {
   const baseUrl = options.baseUrl ?? '';
+  const restBasePath = options.restBasePath ?? '';
   const batching = normalizeBatching(options.batching);
 
   const graphqlQueue = createQueue((requests) => graphqlBatch(requests), batching, {
@@ -45,7 +46,7 @@ export function createJsonDbClient(options = {}) {
       init.body = JSON.stringify(request.body);
     }
 
-    const response = await fetch(resolveUrl(baseUrl, request.path), init);
+    const response = await fetch(resolveUrl(baseUrl, joinPaths(restBasePath, request.path)), init);
     return {
       status: response.status,
       headers: Object.fromEntries(response.headers.entries()),
@@ -302,6 +303,16 @@ function resolveUrl(baseUrl, path) {
   }
 
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).href;
+}
+
+function joinPaths(basePath, requestPath) {
+  if (!basePath) {
+    return requestPath;
+  }
+
+  const normalizedBase = `/${String(basePath).replace(/^\/+/, '').replace(/\/+$/, '')}`;
+  const normalizedPath = `/${String(requestPath ?? '/').replace(/^\/+/, '')}`;
+  return `${normalizedBase}${normalizedPath === '/' ? '' : normalizedPath}`;
 }
 
 function stableStringify(value) {

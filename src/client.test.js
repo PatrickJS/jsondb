@@ -198,6 +198,39 @@ test('client can batch REST requests', async () => {
   assert.equal(calls[0].url, 'http://jsondb.local/__jsondb/batch');
 });
 
+test('client can target scoped REST base paths for Vite dev APIs', async () => {
+  const calls = withMockFetch([
+    {
+      status: 200,
+      headers: {},
+      body: [{ id: 'u_1' }],
+    },
+    [
+      {
+        status: 200,
+        headers: {},
+        body: [{ id: 'u_1' }],
+      },
+    ],
+  ]);
+
+  const client = createJsonDbClient({
+    baseUrl: 'http://jsondb.local',
+    restBasePath: '/__jsondb/rest',
+    restBatchPath: '/__jsondb/batch',
+    graphqlPath: '/__jsondb/graphql',
+  });
+
+  await client.rest.get('/users');
+  await client.rest.batch([{ method: 'GET', path: '/users' }]);
+
+  assert.equal(calls[0].url, 'http://jsondb.local/__jsondb/rest/users');
+  assert.equal(calls[1].url, 'http://jsondb.local/__jsondb/batch');
+  assert.deepEqual(JSON.parse(calls[1].init.body), [
+    { method: 'GET', path: '/users' },
+  ]);
+});
+
 test('client automatic batching dedupes REST GET requests but not writes by default', async () => {
   const calls = withMockFetch([
     [

@@ -87,6 +87,8 @@ export async function loadProjectSchema(config) {
     resources.push(resource);
   }
 
+  diagnostics.push(...validateProjectRelations(resources));
+
   return {
     resources,
     diagnostics,
@@ -99,6 +101,7 @@ export function makeGeneratedSchema(resources, diagnostics = []) {
     version: 1,
     generatedAt: new Date().toISOString(),
     resources: Object.fromEntries(resources.map((resource) => [resource.name, serializeResource(resource)])),
+    relations: resources.flatMap((resource) => resource.relations ?? []),
     rest: Object.fromEntries(resources.map((resource) => [resource.name, restRoutes(resource)])),
     graphql: generateGraphqlSdl(resources),
     diagnostics,
@@ -128,6 +131,10 @@ export function normalizeField(field, fieldName = '') {
 
   if ('default' in field) {
     normalized.default = field.default;
+  }
+
+  if (field.relation && typeof field.relation === 'object' && !Array.isArray(field.relation)) {
+    normalized.relation = normalizeRelation(field.relation, fieldName);
   }
 
   if (field.type === 'enum') {
@@ -585,11 +592,13 @@ function coerceCsvArrayItem(value, itemField) {
 }
 
 function withComputedMetadata(resource) {
-  return {
+  const next = {
     ...resource,
     typeName: typeNameForResource(resource.name, resource.kind),
     routePath: routePathForResource(resource.name),
   };
+  next.relations = relationsForResource(next);
+  return next;
 }
 
 async function listSourceFiles(sourceDir) {
@@ -780,6 +789,79 @@ function validateResourceSeed(resource, config) {
   });
 }
 
+function validateProjectRelations(resources) {
+  const diagnostics = [];
+  const resourceMap = new Map(resources.map((resource) => [resource.name, resource]));
+
+  for (const resource of resources) {
+    for (const relation of resource.relations ?? []) {
+      const target = resourceMap.get(relation.targetResource);
+      if (!target || target.kind !== 'collection') {
+        diagnostics.push({
+          code: 'SCHEMA_RELATION_TARGET_RESOURCE_MISSING',
+          severity: 'error',
+          resource: resource.name,
+          field: relation.sourceField,
+          message: `${resource.name} relation "${relation.name}" targets missing collection "${relation.targetResource}"`,
+          hint: 'Add the target collection fixture or update the relation.to value.',
+          details: relation,
+        });
+        continue;
+      }
+
+      if (!(relation.targetField in (target.fields ?? {}))) {
+        diagnostics.push({
+          code: 'SCHEMA_RELATION_TARGET_FIELD_MISSING',
+          severity: 'error',
+          resource: resource.name,
+          field: relation.sourceField,
+          message: `${resource.name} relation "${relation.name}" targets missing field "${relation.targetResource}.${relation.targetField}"`,
+          hint: 'Use an existing target field, usually the target collection id field.',
+          details: relation,
+        });
+        continue;
+      }
+
+      if (resource.kind !== 'collection') {
+        continue;
+      }
+
+      const sourceField = resource.fields?.[relation.sourceField] ?? {};
+      const targetValues = new Set((Array.isArray(target.seed) ? target.seed : [])
+        .map((record) => record?.[relation.targetField])
+        .filter((value) => value !== undefined && value !== null && value !== '')
+        .map((value) => String(value)));
+
+      for (const [index, record] of resource.seed.entries()) {
+        const value = record?.[relation.sourceField];
+        if (value === undefined || value === null || value === '') {
+          continue;
+        }
+
+        if (targetValues.has(String(value))) {
+          continue;
+        }
+
+        diagnostics.push({
+          code: 'SCHEMA_RELATION_TARGET_MISSING',
+          severity: sourceField.required ? 'error' : 'warn',
+          resource: resource.name,
+          field: relation.sourceField,
+          message: `${resource.name} seed record ${index} field "${relation.sourceField}" links to missing ${relation.targetResource}.${relation.targetField} "${value}"`,
+          hint: `Add a matching ${relation.targetResource} record or update "${relation.sourceField}".`,
+          details: {
+            ...relation,
+            value,
+            recordIndex: index,
+          },
+        });
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
 function mergeInferredFields(fields, required) {
   if (fields.length === 0) {
     return { type: 'unknown', required: Boolean(required) };
@@ -833,6 +915,7 @@ function serializeResource(resource) {
     idField: resource.kind === 'collection' ? resource.idField : undefined,
     description: resource.description,
     fields: resource.fields,
+    relations: resource.relations,
     seed: resource.seed,
     source: {
       typeSource: resource.typeSource,
@@ -878,6 +961,37 @@ function restRoutes(resource) {
     `PATCH ${resource.routePath}/:${resource.idField}`,
     `DELETE ${resource.routePath}/:${resource.idField}`,
   ];
+}
+
+function normalizeRelation(relation, fieldName) {
+  return {
+    name: String(relation.name ?? relationNameFromField(fieldName)),
+    to: relation.to === undefined ? undefined : String(relation.to),
+    toField: String(relation.toField ?? 'id'),
+    cardinality: relation.cardinality === 'many' ? 'many' : 'one',
+  };
+}
+
+function relationNameFromField(fieldName) {
+  const withoutId = String(fieldName).replace(/Id$/i, '');
+  return withoutId || String(fieldName);
+}
+
+function relationsForResource(resource) {
+  if (resource.kind !== 'collection') {
+    return [];
+  }
+
+  return Object.entries(resource.fields ?? {})
+    .filter(([, field]) => field.relation)
+    .map(([fieldName, field]) => ({
+      name: field.relation.name,
+      sourceResource: resource.name,
+      sourceField: fieldName,
+      targetResource: field.relation.to,
+      targetField: field.relation.toField,
+      cardinality: field.relation.cardinality,
+    }));
 }
 
 function generateGraphqlSdl(resources) {

@@ -30,6 +30,10 @@
     "./sqlite": {
       "types": "./src/sqlite.d.ts",
       "default": "./src/sqlite.js"
+    },
+    "./vite": {
+      "types": "./src/vite.d.ts",
+      "default": "./src/vite.js"
     }
   },
   "files": [

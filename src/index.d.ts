@@ -159,6 +159,7 @@ export type RestBatchResult = {
 
 export type JsonDbClientOptions = {
   baseUrl?: string;
+  restBasePath?: string;
   graphqlPath?: string;
   restBatchPath?: string;
   batching?: boolean | {
