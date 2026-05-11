@@ -43,11 +43,13 @@ async function handleRestRequestUnsafe(db, request, response, url) {
 
   const [routeName, id] = url.pathname.split('/').filter(Boolean);
   if (!routeName) {
-    sendJson(response, 200, {
-      resources: db.resourceNames(),
-      schema: '/__jsondb/schema',
-      graphql: db.config.graphql?.path ?? '/graphql',
-    });
+    const discovery = rootDiscovery(db);
+    if (request.method === 'GET' && requestPrefersHtml(request)) {
+      sendText(response, 200, renderRootDiscovery(discovery), 'text/html; charset=utf-8');
+      return;
+    }
+
+    sendJson(response, 200, discovery);
     return;
   }
 
@@ -170,6 +172,151 @@ function maxBodyBytes(db) {
 function sourceDirLabel(config) {
   const relative = path.relative(config.cwd, config.sourceDir) || '.';
   return `${relative.split(path.sep).join('/')}/`;
+}
+
+function rootDiscovery(db) {
+  const schemaPath = '/__jsondb/schema';
+  const viewerPath = '/__jsondb';
+  const graphqlPath = db.config.graphql?.path ?? '/graphql';
+
+  return {
+    resources: db.resourceNames(),
+    viewer: viewerPath,
+    schema: schemaPath,
+    graphql: graphqlPath,
+    links: {
+      viewer: viewerPath,
+      schema: schemaPath,
+      graphql: graphqlPath,
+      resources: Object.fromEntries([...db.resources.values()].map((resource) => [resource.name, resource.routePath])),
+    },
+  };
+}
+
+function requestPrefersHtml(request) {
+  const accept = headerValue(request, 'accept');
+  if (!accept) {
+    return false;
+  }
+
+  const preferences = parseAcceptHeader(accept);
+  const html = acceptedMediaScore(preferences, 'text/html');
+  const json = acceptedMediaScore(preferences, 'application/json');
+  return compareAcceptScores(html, json) > 0;
+}
+
+function parseAcceptHeader(value) {
+  return String(value).split(',').map((entry, index) => {
+    const [mediaRange, ...parameters] = entry.trim().split(';');
+    let quality = 1;
+    for (const parameter of parameters) {
+      const [name, rawValue] = parameter.trim().split('=');
+      if (name?.toLowerCase() === 'q') {
+        const parsed = Number(rawValue);
+        quality = Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0;
+      }
+    }
+
+    return {
+      index,
+      mediaRange: mediaRange.toLowerCase(),
+      quality,
+    };
+  }).filter((preference) => preference.mediaRange.includes('/'));
+}
+
+function acceptedMediaScore(preferences, mediaType) {
+  const [wantedType, wantedSubtype] = mediaType.split('/');
+  let best = {
+    quality: 0,
+    specificity: -1,
+    index: Number.MAX_SAFE_INTEGER,
+  };
+
+  for (const preference of preferences) {
+    const [type, subtype] = preference.mediaRange.split('/');
+    if ((type !== '*' && type !== wantedType) || (subtype !== '*' && subtype !== wantedSubtype)) {
+      continue;
+    }
+
+    const specificity = Number(type !== '*') + Number(subtype !== '*');
+    const candidate = {
+      quality: preference.quality,
+      specificity,
+      index: preference.index,
+    };
+    if (compareAcceptScores(candidate, best) > 0) {
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
+function compareAcceptScores(left, right) {
+  if (left.quality !== right.quality) {
+    return left.quality - right.quality;
+  }
+  if (left.specificity !== right.specificity) {
+    return left.specificity - right.specificity;
+  }
+  return right.index - left.index;
+}
+
+function renderRootDiscovery(discovery) {
+  const resourceLinks = Object.entries(discovery.links.resources).map(([name, routePath]) => (
+    `<li><a href="${escapeHtml(routePath)}">${escapeHtml(name)}</a> <code>${escapeHtml(routePath)}</code></li>`
+  )).join('');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jsondb</title>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111827; background: #f8fafc; }
+    main { max-width: 760px; margin: 0 auto; padding: 48px 20px; }
+    h1 { margin: 0 0 8px; font-size: 2rem; line-height: 1.1; }
+    p { color: #4b5563; }
+    section { margin-top: 24px; }
+    ul { display: grid; gap: 10px; padding: 0; list-style: none; }
+    li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; background: white; }
+    a { font-weight: 700; color: #047857; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { color: #475569; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>jsondb</h1>
+    <p>Local fixture database resources and tools.</p>
+
+    <section aria-labelledby="tools-heading">
+      <h2 id="tools-heading">Tools</h2>
+      <ul>
+        <li><a href="${escapeHtml(discovery.viewer)}">Data Viewer</a> <code>${escapeHtml(discovery.viewer)}</code></li>
+        <li><a href="${escapeHtml(discovery.schema)}">Schema</a> <code>${escapeHtml(discovery.schema)}</code></li>
+        <li><a href="${escapeHtml(discovery.graphql)}">GraphQL</a> <code>${escapeHtml(discovery.graphql)}</code></li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="resources-heading">
+      <h2 id="resources-heading">Resources</h2>
+      <ul>${resourceLinks || '<li>No resources loaded.</li>'}</ul>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 async function importCsvFixture(db, request) {

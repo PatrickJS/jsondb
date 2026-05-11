@@ -178,6 +178,25 @@ Create `db/users.schema.json`:
       "values": ["admin", "user"],
       "default": "user",
       "description": "Local authorization role."
+    },
+    "lastViewedAt": {
+      "type": "datetime",
+      "description": "ISO timestamp for the last local view."
+    },
+    "ownerPersonId": {
+      "type": "string",
+      "nullable": true
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "schemaSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "fields": {
+        "version": { "type": "number" }
+      }
     }
   }
 }
@@ -197,6 +216,8 @@ db/users.json
 ```
 
 By default, unknown fields produce warnings for local development. Use [schema strictness](#schema-strictness) when you want drift to fail.
+
+Schema fields can use `nullable: true` when `null` is an intentional value. `datetime` fields validate as strings and generate TypeScript `string` types. Object fields can set `additionalProperties: true` when nested keys are intentionally flexible.
 
 ## Fixture Styles
 
@@ -240,6 +261,8 @@ u_1,Ada Lovelace,ada@example.com,true
 
 `npm run jsondb -- sync` parses the header row, infers a collection schema, and writes `.jsondb/state/users.json`. Source hashes are tracked so changed source fixtures refresh the runtime mirror, while unchanged source fixtures preserve runtime edits.
 
+When a CSV is paired with a schema file, array fields stay arrays in the runtime mirror. For example, a schema field like `"tags": { "type": "array", "items": { "type": "string" } }` accepts a CSV cell such as `renewal;priority` or a JSON array string such as `["renewal","priority"]` and writes `["renewal", "priority"]` to state.
+
 ### Schema-First Fixtures
 
 Use schema-first fixtures when you know the contract before you have useful records.
@@ -275,6 +298,12 @@ export default collection({
   fields: {
     id: field.string({ required: true }),
     role: field.enum(['admin', 'user'], { default: 'user' }),
+    lastViewedAt: field.datetime(),
+    ownerPersonId: field.nullable(field.string()),
+    tags: field.array(field.string()),
+    schemaSnapshot: field.object({
+      version: field.number(),
+    }, { additionalProperties: true }),
   },
   seed: [],
 });
@@ -327,6 +356,14 @@ jsondb generate hono
 jsondb generate hono --api rest,graphql --out ./server
 ```
 
+With pnpm, pass jsondb arguments directly to the script name:
+
+```bash
+pnpm jsondb sync
+pnpm jsondb schema validate
+pnpm jsondb serve
+```
+
 Run all repo examples and open an index of their viewers:
 
 ```bash
@@ -342,6 +379,8 @@ Open the built-in viewer after starting the server:
 ```txt
 http://127.0.0.1:7331/__jsondb
 ```
+
+Opening `http://127.0.0.1:7331/` in a browser shows a small index with links to the data viewer, schema, GraphQL endpoint, and resource routes. API-style requests to `/` keep returning JSON discovery data by default.
 
 The viewer is part of the default workflow. Use it to confirm that fixture data loaded correctly, inspect generated schema metadata, import CSV files, and try REST calls without writing client code first.
 

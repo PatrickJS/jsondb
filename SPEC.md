@@ -656,7 +656,9 @@ POST /__jsondb/batch
 
 REST batches are non-transactional by design. Items execute in order, and earlier successful writes remain committed if a later item fails.
 
-Schema-backed writes should validate declared field types before mutating runtime state. Required fields, primitive types, enum values, arrays, and nested objects should be checked for package API writes, REST writes, GraphQL mutations, `jsondb sync`, and `jsondb schema validate`.
+Schema-backed writes should validate declared field types before mutating runtime state. Required fields, primitive types, enum values, arrays, nullable fields, datetime strings, flexible objects with intentional additional properties, and nested objects should be checked for package API writes, REST writes, GraphQL mutations, `jsondb sync`, and `jsondb schema validate`.
+
+The root route should work as a discovery endpoint. API-style requests to `GET /` should return JSON with resource names plus links for the data viewer, schema endpoint, GraphQL endpoint, and resource routes. Browser-style requests that prefer `text/html` should return a small HTML index with those same links.
 
 The local server should also expose a built-in dependency-free viewer:
 
@@ -681,7 +683,7 @@ schema and field inspection
 diagnostics summary
 ```
 
-CSV data-first fixtures should be treated as collections. The first row is the header row, headers become JSON field names, values are parsed into records, and the runtime mirror is written as `.jsondb/state/<resource>.json`.
+CSV data-first fixtures should be treated as collections. The first row is the header row, headers become JSON field names, values are parsed into records, and the runtime mirror is written as `.jsondb/state/<resource>.json`. When a CSV data file is paired with a schema file, schema-declared array fields should coerce semicolon-delimited cells and JSON array string cells into arrays before validation and mirror sync.
 
 Collection fixtures should always have an id field. If a JSON/JSONC/CSV collection source omits `id`, generate counter ids in the runtime mirror, starting at `"1"` and avoiding existing ids. In default `mode: 'mirror'`, source files stay unchanged. In non-mirror source mode, write generated ids back to plain `.json` fixtures.
 
@@ -695,7 +697,7 @@ POST /__jsondb/import
 
 The upload should copy the CSV into the configured fixture folder, run sync, reload the in-memory resources, update the URL query parameter to the imported resource, and reload the dashboard view.
 
-While serving, jsondb should watch the configured fixture folder for fixture and schema changes, ignoring `.jsondb/`. On change, reload resources and notify the single-file viewer through `/__jsondb/events` so the dashboard refreshes automatically. If one source file fails to parse or load, report a file-specific diagnostic in the viewer and keep the remaining valid resources available.
+While serving, jsondb should watch the configured fixture folder for fixture and schema changes, ignoring `.jsondb/`. On change, reload resources and notify the single-file viewer through `/__jsondb/events` so the dashboard refreshes automatically. If one source file fails to parse or load, report a file-specific diagnostic in the viewer and keep the remaining valid resources available. If the runtime cannot create a file watcher because of environment resource limits such as `EMFILE` or `ENOSPC`, keep the HTTP server running, publish a warning diagnostic, and serve without live reload.
 
 GraphQL should support a dependency-free subset suitable for local app development:
 

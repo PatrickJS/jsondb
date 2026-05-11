@@ -209,6 +209,8 @@ function syntheticValue(field, fieldName, index) {
   switch (field.type) {
     case 'string':
       return `${fieldName}_${index + 1}`;
+    case 'datetime':
+      return new Date(Date.UTC(2020, 0, index + 1)).toISOString();
     case 'number':
       return index + 1;
     case 'boolean':

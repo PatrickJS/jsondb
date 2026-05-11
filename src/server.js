@@ -83,48 +83,108 @@ export async function reloadJsonFixtureDb(db) {
   return project;
 }
 
-async function watchSourceDir(db, events) {
+export async function watchSourceDir(db, events, options = {}) {
   await mkdir(db.config.sourceDir, { recursive: true });
 
   let timer;
-  const watcher = watch(db.config.sourceDir, { recursive: false }, (_event, filename) => {
-    if (shouldIgnoreSourceEvent(db, filename)) {
+  let enabled = true;
+  const watchImpl = options.watch ?? watch;
+  const warn = options.warn ?? ((message) => console.warn(message));
+  let watcher;
+
+  try {
+    watcher = watchImpl(db.config.sourceDir, { recursive: false }, (_event, filename) => {
+      if (!enabled || shouldIgnoreSourceEvent(db, filename)) {
+        return;
+      }
+
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try {
+          const project = await reloadJsonFixtureDb(db);
+          events.publish({
+            type: project.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ? 'synced-with-errors' : 'synced',
+            version: db.schemaVersion,
+            diagnostics: project.diagnostics,
+          });
+        } catch (error) {
+          const diagnostic = {
+            code: 'SERVER_SOURCE_RELOAD_FAILED',
+            severity: 'error',
+            message: error.message,
+            hint: 'Fix the source file and jsondb will try to reload it on the next change.',
+          };
+          db.diagnostics = [diagnostic];
+          db.schemaVersion = Date.now();
+          events.publish({
+            type: 'sync-error',
+            version: db.schemaVersion,
+            diagnostics: db.diagnostics,
+          });
+        }
+      }, 75);
+    });
+  } catch (error) {
+    enabled = false;
+    reportWatchUnavailable(db, events, error, warn);
+    return {
+      enabled,
+      close() {
+        clearTimeout(timer);
+      },
+    };
+  }
+
+  watcher.on?.('error', (error) => {
+    if (!enabled) {
       return;
     }
 
+    enabled = false;
     clearTimeout(timer);
-    timer = setTimeout(async () => {
-      try {
-        const project = await reloadJsonFixtureDb(db);
-        events.publish({
-          type: project.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ? 'synced-with-errors' : 'synced',
-          version: db.schemaVersion,
-          diagnostics: project.diagnostics,
-        });
-      } catch (error) {
-        const diagnostic = {
-          code: 'SERVER_SOURCE_RELOAD_FAILED',
-          severity: 'error',
-          message: error.message,
-          hint: 'Fix the source file and jsondb will try to reload it on the next change.',
-        };
-        db.diagnostics = [diagnostic];
-        db.schemaVersion = Date.now();
-        events.publish({
-          type: 'sync-error',
-          version: db.schemaVersion,
-          diagnostics: db.diagnostics,
-        });
-      }
-    }, 75);
+    try {
+      watcher.close();
+    } catch {
+      // The watcher may already be closed by the runtime.
+    }
+    reportWatchUnavailable(db, events, error, warn);
   });
 
   return {
+    get enabled() {
+      return enabled;
+    },
     close() {
+      enabled = false;
       clearTimeout(timer);
-      watcher.close();
+      try {
+        watcher.close();
+      } catch {
+        // The watcher may already be closed after an error event.
+      }
     },
   };
+}
+
+function reportWatchUnavailable(db, events, error, warn) {
+  const diagnostic = {
+    code: 'SERVER_WATCH_UNAVAILABLE',
+    severity: 'warn',
+    message: `File watching is disabled: ${error.message}`,
+    hint: 'jsondb serve is still running, but fixture changes will require restarting the server.',
+    details: {
+      code: error.code,
+    },
+  };
+
+  db.diagnostics = [...(db.diagnostics ?? []), diagnostic];
+  db.schemaVersion = Date.now();
+  events.publish({
+    type: 'watch-disabled',
+    version: db.schemaVersion,
+    diagnostics: db.diagnostics,
+  });
+  warn(`jsondb serve: file watching disabled (${error.message}). Restart the server to pick up fixture changes.`);
 }
 
 function shouldIgnoreSourceEvent(db, filename) {

@@ -24,6 +24,10 @@ export const field = {
     return makeField('string', options);
   },
 
+  datetime(options = {}) {
+    return makeField('datetime', options);
+  },
+
   number(options = {}) {
     return makeField('number', options);
   },
@@ -63,6 +67,14 @@ export const field = {
 
   json(options = {}) {
     return makeField('unknown', options);
+  },
+
+  nullable(definition, options = {}) {
+    return {
+      ...definition,
+      ...options,
+      nullable: true,
+    };
   },
 };
 

@@ -236,7 +236,7 @@ export function validateRecord(resourceName: string, value: Record<string, unkno
 
   for (const [fieldName, field] of Object.entries<any>(resource.fields || {})) {
     const fieldValue = value[fieldName];
-    if (field.required && (fieldValue === undefined || fieldValue === null)) {
+    if (field.required && (fieldValue === undefined || (fieldValue === null && !field.nullable))) {
       throw validationError(resourceName, 'Missing required field "' + fieldName + '".');
     }
     if (fieldValue !== undefined) {
@@ -246,14 +246,18 @@ export function validateRecord(resourceName: string, value: Record<string, unkno
 }
 
 function validateValue(resourceName: string, fieldPath: string, field: any, value: unknown) {
-  if (value === null && field.type !== 'unknown') {
+  if (value === null && field.type !== 'unknown' && !field.nullable) {
     throw validationError(resourceName, 'Field "' + fieldPath + '" cannot be null.');
+  }
+
+  if (value === null) {
+    return;
   }
 
   if (field.type === 'unknown') {
     return;
   }
-  if (field.type === 'string' && typeof value !== 'string') {
+  if ((field.type === 'string' || field.type === 'datetime') && typeof value !== 'string') {
     throw validationError(resourceName, 'Field "' + fieldPath + '" must be a string.');
   }
   if (field.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) {
@@ -277,7 +281,7 @@ function validateValue(resourceName: string, fieldPath: string, field: any, valu
     }
     for (const [childName, childField] of Object.entries<any>(field.fields || {})) {
       const childValue = (value as Record<string, unknown>)[childName];
-      if (childField.required && (childValue === undefined || childValue === null)) {
+      if (childField.required && (childValue === undefined || (childValue === null && !childField.nullable))) {
         throw validationError(resourceName, 'Missing required field "' + fieldPath + '.' + childName + '".');
       }
       if (childValue !== undefined) {

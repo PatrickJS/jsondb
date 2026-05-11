@@ -119,6 +119,95 @@ test('schema-only fixtures generate types and initialize empty state', async () 
   assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/auditEvents.json'), 'utf8')), []);
 });
 
+test('schema fields support nullable datetime arrays and flexible object shapes', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'charts.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "ownerPersonId": { "type": "string", "nullable": true },
+      "lastViewedAt": { "type": "datetime" },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "schemaSnapshot": {
+        "type": "object",
+        "additionalProperties": true,
+        "fields": {
+          "version": { "type": "number" }
+        }
+      }
+    },
+    "seed": [
+      {
+        "id": "chart_1",
+        "ownerPersonId": null,
+        "lastViewedAt": "2026-05-11T12:00:00.000Z",
+        "tags": ["renewal", "priority"],
+        "schemaSnapshot": {
+          "version": 1,
+          "displayOverrides": { "color": "green" }
+        }
+      }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+  const generated = await readFile(path.join(cwd, '.jsondb/types/index.ts'), 'utf8');
+  const state = JSON.parse(await readFile(path.join(cwd, '.jsondb/state/charts.json'), 'utf8'));
+
+  assert.deepEqual(result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'), []);
+  assert.match(generated, /ownerPersonId\?: string \| null;/);
+  assert.match(generated, /lastViewedAt\?: string;/);
+  assert.match(generated, /tags\?: Array<string>;/);
+  assert.match(generated, /schemaSnapshot\?: \{/);
+  assert.match(generated, /version\?: number;/);
+  assert.match(generated, /\[key: string\]: unknown;/);
+  assert.deepEqual(state[0].tags, ['renewal', 'priority']);
+});
+
+test('.schema.mjs helpers expose nullable datetime and flexible objects', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'charts.schema.mjs', `
+import { collection, field } from 'jsondb/schema';
+
+export default collection({
+  idField: 'id',
+  fields: {
+    id: field.string({ required: true }),
+    ownerPersonId: field.nullable(field.string()),
+    lastViewedAt: field.datetime(),
+    schemaSnapshot: field.object({
+      version: field.number(),
+    }, { additionalProperties: true }),
+  },
+  seed: [
+    {
+      id: 'chart_1',
+      ownerPersonId: null,
+      lastViewedAt: '2026-05-11T12:00:00.000Z',
+      schemaSnapshot: {
+        version: 1,
+        displayOverrides: { color: 'green' },
+      },
+    },
+  ],
+});
+`);
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+  const generated = await readFile(path.join(cwd, '.jsondb/types/index.ts'), 'utf8');
+
+  assert.deepEqual(result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'), []);
+  assert.match(generated, /ownerPersonId\?: string \| null;/);
+  assert.match(generated, /lastViewedAt\?: string;/);
+  assert.match(generated, /\[key: string\]: unknown;/);
+});
+
 test('schema-only fixtures can generate synthetic seed records', async () => {
   const cwd = await makeProject();
   await writeConfig(cwd, `export default {
@@ -558,6 +647,38 @@ test('strict unknown fields fail sync in mixed mode', async () => {
     () => syncJsonFixtureDb(config),
     /twitterHandle/,
   );
+});
+
+test('schema-backed CSV arrays stay arrays in the runtime mirror', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'charts.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  }`);
+  await writeFixture(cwd, 'charts.csv', 'id,tags\nchart_1,renewal;priority\nchart_2,"[""growth"",""upsell""]"');
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+  const state = JSON.parse(await readFile(path.join(cwd, '.jsondb/state/charts.json'), 'utf8'));
+
+  assert.deepEqual(result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'), []);
+  assert.deepEqual(state, [
+    {
+      id: 'chart_1',
+      tags: ['renewal', 'priority'],
+    },
+    {
+      id: 'chart_2',
+      tags: ['growth', 'upsell'],
+    },
+  ]);
 });
 
 test('schema seed records are validated without a separate data file', async () => {

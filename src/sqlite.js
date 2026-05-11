@@ -265,6 +265,7 @@ function sqliteTypeForField(field) {
     case 'boolean':
       return 'INTEGER';
     case 'string':
+    case 'datetime':
     case 'enum':
     case 'object':
     case 'array':

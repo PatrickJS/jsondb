@@ -782,13 +782,14 @@ export function renderJsonDbViewer(options = {}) {
     }
 
     function fieldType(field) {
+      const suffix = field.nullable ? ' | null' : '';
       if (field.type === 'enum') {
-        return 'enum(' + (field.values || []).join(', ') + ')';
+        return 'enum(' + (field.values || []).join(', ') + ')' + suffix;
       }
       if (field.type === 'array') {
-        return 'array<' + fieldType(field.items || { type: 'unknown' }) + '>';
+        return 'array<' + fieldType(field.items || { type: 'unknown' }) + '>' + suffix;
       }
-      return field.type || 'unknown';
+      return (field.type || 'unknown') + suffix;
     }
 
     function inlineObject(value) {

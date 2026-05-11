@@ -105,23 +105,33 @@ function renderField(fieldName, field, resource, config, depth) {
 }
 
 function typeForField(field, fieldName, resource, config, depth) {
+  let type;
   switch (field.type) {
     case 'string':
-      return 'string';
+    case 'datetime':
+      type = 'string';
+      break;
     case 'number':
-      return 'number';
+      type = 'number';
+      break;
     case 'boolean':
-      return 'boolean';
+      type = 'boolean';
+      break;
     case 'enum':
-      return enumAliasName(resource, fieldName);
+      type = enumAliasName(resource, fieldName);
+      break;
     case 'array':
-      return `Array<${typeForField(field.items ?? { type: 'unknown' }, `${fieldName}Item`, resource, config, depth)}>`;
+      type = `Array<${typeForField(field.items ?? { type: 'unknown' }, `${fieldName}Item`, resource, config, depth)}>`;
+      break;
     case 'object':
-      return objectType(field, resource, config, depth);
+      type = objectType(field, resource, config, depth);
+      break;
     case 'unknown':
     default:
-      return 'unknown';
+      type = 'unknown';
   }
+
+  return field.nullable ? `${type} | null` : type;
 }
 
 function objectType(field, resource, config, depth) {
@@ -143,6 +153,9 @@ function objectType(field, resource, config, depth) {
 
     const optional = childField.required ? '' : '?';
     lines.push(`${childIndent}${readonly}${propertyName(fieldName)}${optional}: ${typeForField(childField, fieldName, resource, config, depth + 1)};`);
+  }
+  if (field.additionalProperties === true) {
+    lines.push(`${childIndent}[key: string]: unknown;`);
   }
   lines.push(`${indent}}`);
   return lines.join('\n');

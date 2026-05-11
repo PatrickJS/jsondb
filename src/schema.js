@@ -114,6 +114,10 @@ export function normalizeField(field, fieldName = '') {
     type: field.type ?? 'unknown',
   };
 
+  if ('nullable' in field) {
+    normalized.nullable = Boolean(field.nullable);
+  }
+
   if ('required' in field) {
     normalized.required = Boolean(field.required);
   }
@@ -132,6 +136,10 @@ export function normalizeField(field, fieldName = '') {
 
   if (field.type === 'array') {
     normalized.items = normalizeField(field.items ?? { type: 'unknown' }, `${fieldName}Item`);
+  }
+
+  if (field.type === 'object' && 'additionalProperties' in field) {
+    normalized.additionalProperties = Boolean(field.additionalProperties);
   }
 
   if (field.type === 'object' && field.fields && typeof field.fields === 'object') {
@@ -271,7 +279,7 @@ export function validateRecordAgainstResource(record, resource, config, options 
   }
 
   for (const [fieldName, field] of Object.entries(fields)) {
-    if (field.required && (record[fieldName] === undefined || record[fieldName] === null)) {
+    if (field.required && (record[fieldName] === undefined || (record[fieldName] === null && !field.nullable))) {
       diagnostics.push({
         code: 'SCHEMA_REQUIRED_FIELD_MISSING',
         severity: 'error',
@@ -302,16 +310,20 @@ export function validateValueAgainstField(value, field, context) {
     return diagnostics;
   }
 
-  if (value === null && field.type !== 'unknown') {
-    return [
-      typeMismatch(context, expected, value),
-    ];
+  if (value === null) {
+    return field.nullable || field.type === 'unknown'
+      ? diagnostics
+      : [
+        typeMismatch(context, expected, value),
+      ];
   }
 
   switch (field.type) {
     case 'unknown':
       return diagnostics;
     case 'string':
+      return typeof value === 'string' ? diagnostics : [typeMismatch(context, expected, value)];
+    case 'datetime':
       return typeof value === 'string' ? diagnostics : [typeMismatch(context, expected, value)];
     case 'number':
       return typeof value === 'number' && Number.isFinite(value) ? diagnostics : [typeMismatch(context, expected, value)];
@@ -359,31 +371,33 @@ function validateObjectFields(value, field, context) {
   const diagnostics = [];
   const fields = field.fields ?? {};
 
-  for (const childName of Object.keys(value)) {
-    if (childName in fields) {
-      continue;
-    }
+  if (field.additionalProperties !== true) {
+    for (const childName of Object.keys(value)) {
+      if (childName in fields) {
+        continue;
+      }
 
-    const setting = context.config.schema?.unknownFields ?? 'warn';
-    if (setting === 'allow') {
-      continue;
-    }
+      const setting = context.config.schema?.unknownFields ?? 'warn';
+      if (setting === 'allow') {
+        continue;
+      }
 
-    const fieldPath = `${context.fieldPath}.${childName}`;
-    diagnostics.push({
-      code: 'SCHEMA_UNKNOWN_FIELD',
-      severity: setting === 'error' ? 'error' : 'warn',
-      resource: context.resource.name,
-      field: fieldPath,
-      message: `${context.resource.name} field "${fieldPath}" is not defined in the schema`,
-    });
+      const fieldPath = `${context.fieldPath}.${childName}`;
+      diagnostics.push({
+        code: 'SCHEMA_UNKNOWN_FIELD',
+        severity: setting === 'error' ? 'error' : 'warn',
+        resource: context.resource.name,
+        field: fieldPath,
+        message: `${context.resource.name} field "${fieldPath}" is not defined in the schema`,
+      });
+    }
   }
 
   for (const [childName, childField] of Object.entries(fields)) {
     const fieldPath = `${context.fieldPath}.${childName}`;
     const childValue = value[childName];
 
-    if (childField.required && (childValue === undefined || childValue === null)) {
+    if (childField.required && (childValue === undefined || (childValue === null && !childField.nullable))) {
       diagnostics.push({
         code: 'SCHEMA_REQUIRED_FIELD_MISSING',
         severity: 'error',
@@ -460,7 +474,7 @@ function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, rawDa
     if (kind === 'collection') {
       fields = ensureCollectionIdField(fields, idField);
     }
-    const normalizedSeed = normalizeSeed(seed, kind);
+    const normalizedSeed = normalizeSeed(dataFormat === 'csv' ? coerceCsvSeedToSchema(seed, fields, kind) : seed, kind);
     const idResult = ensureCollectionSeedIds(normalizedSeed, kind, idField);
 
     return withComputedMetadata({
@@ -502,6 +516,72 @@ function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, rawDa
     typeSource: 'data',
     generatedIds: idResult.generated,
   });
+}
+
+function coerceCsvSeedToSchema(seed, fields, kind) {
+  if (kind === 'collection') {
+    return Array.isArray(seed)
+      ? seed.map((record) => coerceCsvRecordToSchema(record, fields))
+      : seed;
+  }
+
+  return coerceCsvRecordToSchema(seed, fields);
+}
+
+function coerceCsvRecordToSchema(record, fields) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return record;
+  }
+
+  const next = { ...record };
+  for (const [fieldName, field] of Object.entries(fields ?? {})) {
+    if (field.type === 'array' && typeof next[fieldName] === 'string') {
+      next[fieldName] = parseCsvArrayValue(next[fieldName], field.items ?? { type: 'unknown' });
+    }
+  }
+  return next;
+}
+
+function parseCsvArrayValue(value, itemField) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => coerceCsvArrayItem(item, itemField));
+      }
+    } catch {
+      return value;
+    }
+  }
+
+  return trimmed
+    .split(';')
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+    .map((item) => coerceCsvArrayItem(item, itemField));
+}
+
+function coerceCsvArrayItem(value, itemField) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  if (itemField.type === 'number' && /^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) {
+    return Number(value);
+  }
+
+  if (itemField.type === 'boolean') {
+    const lower = value.toLowerCase();
+    if (lower === 'true') {
+      return true;
+    }
+    if (lower === 'false') {
+      return false;
+    }
+  }
+
+  return value;
 }
 
 function withComputedMetadata(resource) {
@@ -830,6 +910,7 @@ function graphqlFieldType(field, isIdField = false) {
   const suffix = field.required ? '!' : '';
   switch (field.type) {
     case 'string':
+    case 'datetime':
     case 'enum':
       return `String${suffix}`;
     case 'number':

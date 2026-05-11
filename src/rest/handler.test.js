@@ -60,6 +60,77 @@ test('REST handler serves the built-in jsondb viewer', async () => {
   assert.match(response.body, /GraphQL Examples/);
 });
 
+test('REST root returns JSON discovery links by default', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers['content-type'], /application\/json/);
+  assert.deepEqual(response.json(), {
+    resources: ['users'],
+    viewer: '/__jsondb',
+    schema: '/__jsondb/schema',
+    graphql: '/graphql',
+    links: {
+      viewer: '/__jsondb',
+      schema: '/__jsondb/schema',
+      graphql: '/graphql',
+      resources: {
+        users: '/users',
+      },
+    },
+  });
+});
+
+test('REST root returns HTML discovery links for browser requests', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'chartMappings.json', JSON.stringify([
+    {
+      id: 'mapping_1',
+      chartId: 'chart_1',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET', undefined, {
+      accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    }),
+    response,
+    new URL('http://jsondb.local/'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers['content-type'], /text\/html/);
+  assert.match(response.body, /jsondb/);
+  assert.match(response.body, /Data Viewer/);
+  assert.match(response.body, /href="\/__jsondb"/);
+  assert.match(response.body, /Schema/);
+  assert.match(response.body, /href="\/__jsondb\/schema"/);
+  assert.match(response.body, /GraphQL/);
+  assert.match(response.body, /href="\/graphql"/);
+  assert.match(response.body, /chartMappings/);
+  assert.match(response.body, /href="\/chart-mappings"/);
+});
+
 test('REST schema endpoint exposes route paths for the viewer', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'auditEvents.json', JSON.stringify([
@@ -423,9 +494,10 @@ test('REST handler returns 413 for oversized JSON bodies', async () => {
   assert.match(response.json().error.hint, /server\.maxBodyBytes/);
 });
 
-function makeRequest(method, body) {
+function makeRequest(method, body, headers = {}) {
   return {
     method,
+    headers,
     async *[Symbol.asyncIterator]() {
       if (body !== undefined) {
         yield Buffer.from(JSON.stringify(body));

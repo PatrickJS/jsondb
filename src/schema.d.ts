@@ -1,16 +1,22 @@
 export type FieldDefinition =
   | ({ type: 'string' } & FieldOptions<string>)
+  | ({ type: 'datetime' } & FieldOptions<string>)
   | ({ type: 'number' } & FieldOptions<number>)
   | ({ type: 'boolean' } & FieldOptions<boolean>)
   | ({ type: 'enum'; values: readonly (string | number | boolean)[] } & FieldOptions<string | number | boolean>)
-  | ({ type: 'object'; fields?: Record<string, FieldDefinition> } & FieldOptions<Record<string, unknown>>)
+  | ({ type: 'object'; fields?: Record<string, FieldDefinition>; additionalProperties?: boolean } & FieldOptions<Record<string, unknown>>)
   | ({ type: 'array'; items?: FieldDefinition } & FieldOptions<unknown[]>)
   | ({ type: 'unknown' } & FieldOptions<unknown>);
 
 export type FieldOptions<DefaultValue> = {
   required?: boolean;
+  nullable?: boolean;
   description?: string;
   default?: DefaultValue;
+};
+
+export type ObjectFieldOptions = FieldOptions<Record<string, unknown>> & {
+  additionalProperties?: boolean;
 };
 
 export type ResourceDefinition = {
@@ -25,13 +31,15 @@ export function document(definition: ResourceDefinition): ResourceDefinition & {
 
 export const field: {
   string(options?: FieldOptions<string>): FieldDefinition;
+  datetime(options?: FieldOptions<string>): FieldDefinition;
   number(options?: FieldOptions<number>): FieldDefinition;
   boolean(options?: FieldOptions<boolean>): FieldDefinition;
   enum<const Values extends readonly (string | number | boolean)[]>(
     values: Values,
     options?: FieldOptions<Values[number]>,
   ): FieldDefinition;
-  object(fields?: Record<string, FieldDefinition>, options?: FieldOptions<Record<string, unknown>>): FieldDefinition;
+  object(fields?: Record<string, FieldDefinition>, options?: ObjectFieldOptions): FieldDefinition;
   array(items?: FieldDefinition, options?: FieldOptions<unknown[]>): FieldDefinition;
   json(options?: FieldOptions<unknown>): FieldDefinition;
+  nullable(definition: FieldDefinition, options?: Omit<FieldOptions<unknown>, 'nullable'>): FieldDefinition;
 };
