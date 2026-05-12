@@ -46,6 +46,7 @@
     "examples/*/jsondb.config.mjs",
     "examples/*/src/generated/**",
     "jsondb.config.example.mjs",
+    "CHANGELOG.md",
     "README.md",
     "SPEC.md"
   ],
