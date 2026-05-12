@@ -1,4 +1,5 @@
 import { loadProjectSchema } from './schema.js';
+import { forkSourceExists, isValidForkName } from './features/forks.js';
 
 export async function runJsonDbDoctor(config) {
   const project = await loadProjectSchema(config);
@@ -9,11 +10,80 @@ export async function runJsonDbDoctor(config) {
       severity: diagnostic.severity ?? 'warn',
     })),
     ...doctorResourceFindings(project.resources),
+    ...await doctorForkFindings(config),
   ];
 
   return {
     summary: summarizeFindings(findings),
     findings,
+  };
+}
+
+async function doctorForkFindings(config) {
+  const findings = [];
+  for (const [forkName, forkConfig] of Object.entries(config.forks ?? {})) {
+    if (!isValidForkName(forkName)) {
+      findings.push({
+        code: 'FORK_NAME_INVALID',
+        severity: 'error',
+        source: 'doctor',
+        message: `Invalid jsondb fork name "${forkName}".`,
+        hint: 'Use a folder-style name with letters, numbers, underscores, or hyphens, such as "legacy-demo".',
+        details: {
+          fork: forkName,
+        },
+      });
+      continue;
+    }
+
+    if (!await forkSourceExists(forkConfig)) {
+      findings.push({
+        code: 'FORK_SOURCE_MISSING',
+        severity: 'error',
+        source: 'doctor',
+        message: `jsondb fork "${forkName}" source folder does not exist: ${forkConfig.sourceDir}`,
+        hint: `Create db.forks/${forkName}/ or update forks["${forkName}"] in jsondb.config.mjs.`,
+        details: {
+          fork: forkName,
+          sourceDir: forkConfig.sourceDir,
+        },
+      });
+      continue;
+    }
+
+    try {
+      const project = await loadProjectSchema(forkConfig);
+      findings.push(
+        ...project.diagnostics.map((diagnostic) => annotateForkFinding(forkName, 'schema', diagnostic)),
+        ...doctorResourceFindings(project.resources).map((finding) => annotateForkFinding(forkName, 'doctor', finding)),
+      );
+    } catch (error) {
+      findings.push({
+        code: 'FORK_SCHEMA_INVALID',
+        severity: 'error',
+        source: 'doctor',
+        message: `jsondb fork "${forkName}" could not be loaded: ${error.message}`,
+        hint: `Fix the fork source files in ${forkConfig.sourceDir}.`,
+        details: {
+          fork: forkName,
+          sourceDir: forkConfig.sourceDir,
+        },
+      });
+    }
+  }
+
+  return findings;
+}
+
+function annotateForkFinding(forkName, source, finding) {
+  return {
+    ...finding,
+    source,
+    message: `Fork "${forkName}": ${finding.message}`,
+    details: {
+      ...(finding.details ?? {}),
+      fork: forkName,
+    },
   };
 }
 

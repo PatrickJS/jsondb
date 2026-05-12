@@ -106,6 +106,7 @@ Use this table to start with defaults and then jump to the config only when a us
 | Browse and sanity-check local data      | `db/*.json`, `npm run db:serve`, and the [data viewer](#data-viewer)        | Fixtures live outside `db/`: [different fixture folder](#different-fixture-folder)                     |
 | Prototype UI before the backend exists  | Default fixtures plus [REST API](#rest-api) calls from the app              | Adjust the default 30-100ms delay: [mock delay and errors](#mock-delay-and-errors)                    |
 | Share local data across tests and demos | Default sync output in `.jsondb/state`                                      | Test imports need stable generated types: [committed generated types](#committed-generated-types)      |
+| Keep old demo pages while refactoring   | Main `db/` for the new shape                                                | Legacy pages need their own source shape: [database forks](#database-forks)                           |
 | Import spreadsheet or product data      | `db/*.csv` or viewer CSV import                                             | CSVs belong in another folder: [different fixture folder](#different-fixture-folder)                   |
 | Evolve fuzzy data into a contract       | Add `db/<name>.schema.json` or `.schema.jsonc`                              | Schema drift should fail instead of warn: [schema strictness](#schema-strictness)                      |
 | Find fixture consistency issues         | `npm run db -- doctor`                                                      | CI should fail on warnings: `npm run db -- check --strict`                                            |
@@ -127,6 +128,7 @@ The defaults are designed to be useful without `jsondb.config.mjs`. When you do 
 | Schema-only mock records             | Off                           | [Generated schema seed data](#generated-schema-seed-data)                 | Create local records from schema when no fixture data exists yet.       |
 | Local latency                         | 30-100ms                      | [Mock delay and errors](#mock-delay-and-errors)                           | Disable it, use a fixed delay, or choose a different range.             |
 | Random local failures                | Off                           | [Mock delay and errors](#mock-delay-and-errors)                           | Test retries and error UI once the happy path works.                    |
+| Temporary legacy database shapes      | Off                           | [Database forks](#database-forks)                                         | Run old and new local data contracts from one dev server.               |
 | Host, port, body limit               | `127.0.0.1:7331`, 1 MB bodies | [Server options](#server-options)                                         | Avoid port conflicts or allow larger local payloads.                    |
 | Multiple REST calls in one request   | Available                     | [REST batching](#rest-batching)                                           | Batch local reads and writes through `POST /__jsondb/batch`.            |
 | Production-ish API starter           | Not generated                 | [Hono and SQLite starter generation](#hono-and-sqlite-starter-generation) | Turn settled fixtures and schemas into a Hono/SQLite starter.           |
@@ -410,6 +412,7 @@ It reports existing schema/source diagnostics plus advisory fixture health findi
 - mixed id value types like `"1"` and `1`
 - inconsistent field types like `done: true` and `done: "yes"`
 - likely relation fields with values missing from the target collection
+- configured forks with missing folders, invalid names, or schema/source diagnostics
 
 Relation inference is only a suggestion. It does not rewrite schema files and it does not make `?expand=user` work until you add explicit relation metadata.
 
@@ -600,6 +603,74 @@ const batch = await client.rest.batch([
 
 The client can batch requests made within a short timeout. The default batching window is `10ms`. Identical REST `GET` requests are deduped by default, while writes are not deduped unless you explicitly choose `dedupe: 'all'`.
 
+## Database Forks
+
+Use database forks when part of an app needs to keep an older fixture shape while other pages move to a new shape. The main `db/` folder remains the default database, and each fork gets its own committed source folder plus its own generated runtime state:
+
+```txt
+db/                         current database shape
+db.forks/legacy-demo/       old demo/page shape
+.jsondb/state/              generated state for db/
+.jsondb/forks/legacy-demo/  generated state for the fork
+```
+
+Declare forks in `jsondb.config.mjs`:
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  forks: ['legacy-demo'],
+});
+```
+
+`legacy-demo` maps to `db.forks/legacy-demo` by default. For a custom folder, use object form:
+
+```js
+export default defineConfig({
+  forks: {
+    'legacy-demo': {
+      dbDir: './fixtures/legacy-demo',
+    },
+  },
+});
+```
+
+App code can target the fork with the HTTP client:
+
+```ts
+import { createJsonDbClient } from 'jsondb/client';
+
+const legacyDb = createJsonDbClient({
+  baseUrl: 'http://127.0.0.1:7331',
+  fork: 'legacy-demo',
+});
+
+const users = await legacyDb.rest.get('/users');
+```
+
+In Vite apps using `jsondbPlugin()`, the virtual client exposes the same helper without repeating paths:
+
+```ts
+import jsondb, { fork } from 'virtual:jsondb/client';
+
+const users = await jsondb.rest.get('/users');
+const legacyUsers = await fork('legacy-demo').rest.get('/users');
+```
+
+The helper is also attached to the default client as `jsondb.fork('legacy-demo')`.
+
+The `fork` option derives the fork-scoped routes automatically:
+
+```txt
+GET  /__jsondb/forks/legacy-demo/rest/users
+POST /__jsondb/forks/legacy-demo/batch
+POST /__jsondb/forks/legacy-demo/graphql
+GET  /__jsondb/forks/legacy-demo/schema
+```
+
+Fork names are folder-style slugs: letters, numbers, underscores, and hyphens. `jsondb doctor` reports missing configured fork folders and invalid fork names, so CI can catch a fork source folder that was not checked in.
+
 ## Vite Dev Server Plugin
 
 Vite apps can mount jsondb into the existing dev server instead of running `jsondb serve` on a second port:
@@ -631,13 +702,16 @@ GET  /__jsondb/rest/users/u_1
 Use the virtual browser client from app code when you want the same scoped paths:
 
 ```ts
-import jsondb from 'virtual:jsondb/client';
+import jsondb, { fork } from 'virtual:jsondb/client';
 
 const users = await jsondb.rest.get('/users');
 const selected = await jsondb.rest.get('/users?select=id,name');
+
+const legacyDb = fork('legacy-demo');
+const legacyUsers = await legacyDb.rest.get('/users');
 ```
 
-Plugin options include `cwd`, `dbDir`, `stateDir`, `apiBase`, `restBasePath`, `graphqlPath`, `rootRoutes`, `clientVirtualModule`, and `clientImport`. Set `rootRoutes: true` only when you intentionally want Vite dev to also answer unscoped routes like `/users`; standalone `jsondb serve` keeps those root REST routes by default.
+Plugin options include `cwd`, `dbDir`, `stateDir`, `forks`, `apiBase`, `restBasePath`, `graphqlPath`, `rootRoutes`, `clientVirtualModule`, and `clientImport`. Set `rootRoutes: true` only when you intentionally want Vite dev to also answer unscoped routes like `/users`; standalone `jsondb serve` keeps those root REST routes by default.
 
 ## Type Generation
 
@@ -735,6 +809,8 @@ export default defineConfig({
     delay: [30, 100],
     errors: null,
   },
+
+  forks: ['legacy-demo'],
 });
 ```
 

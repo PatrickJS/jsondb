@@ -70,6 +70,7 @@ function resolveViteRoutes(options) {
 }
 
 function renderVirtualClient(routes, clientImport) {
+  const forkBasePath = `${routes.apiBase || ''}/forks`;
   return `import { createJsonDbClient } from ${JSON.stringify(clientImport)};
 
 export const client = createJsonDbClient({
@@ -77,6 +78,23 @@ export const client = createJsonDbClient({
   restBatchPath: ${JSON.stringify(`${routes.apiBase}/batch`)},
   graphqlPath: ${JSON.stringify(routes.graphqlPath)},
 });
+
+export function fork(name) {
+  const forkName = String(name ?? '');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(forkName)) {
+    throw new Error(\`Invalid jsondb fork name "\${forkName}". Use letters, numbers, underscores, or hyphens.\`);
+  }
+
+  const forkBase = \`${forkBasePath}/\${encodeURIComponent(forkName)}\`;
+  return createJsonDbClient({
+    restBasePath: \`\${forkBase}/rest\`,
+    restBatchPath: \`\${forkBase}/batch\`,
+    graphqlPath: \`\${forkBase}/graphql\`,
+  });
+}
+
+export const createForkClient = fork;
+client.fork = fork;
 
 export default client;
 `;

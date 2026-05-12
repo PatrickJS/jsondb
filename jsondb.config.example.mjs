@@ -48,4 +48,8 @@ export default defineConfig({
     delay: [30, 100],
     errors: null,
   },
+
+  // Optional database forks for temporary legacy fixture shapes.
+  // Each name maps to ./db.forks/<name> unless you use object form.
+  forks: [],
 });

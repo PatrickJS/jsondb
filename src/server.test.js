@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
 import { openJsonFixtureDb } from './db.js';
-import { makeProject, writeFixture } from '../test/helpers.js';
+import { makeProject, writeConfig, writeFixture } from '../test/helpers.js';
 import { createJsonDbRequestHandler, reloadJsonFixtureDb, watchSourceDir } from './server.js';
 
 test('server reload path keeps valid resources when another source file fails', async () => {
@@ -162,6 +164,63 @@ test('request handler preserves standalone root REST and GraphQL routes', async 
   assert.deepEqual(users.json(), [{ id: 'u_1', name: 'Ada' }]);
   assert.equal(graphql.status, 200);
   assert.deepEqual(graphql.json().data.users, [{ id: 'u_1' }]);
+});
+
+test('request handler routes configured fork REST, batch, schema, and GraphQL requests', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_main',
+      name: 'Main Ada',
+    },
+  ]));
+  await mkdir(path.join(cwd, 'db.forks/legacy-demo'), { recursive: true });
+  await writeFile(path.join(cwd, 'db.forks/legacy-demo/users.json'), `${JSON.stringify([
+    {
+      id: 'u_legacy',
+      fullName: 'Legacy Ada',
+    },
+  ])}\n`, 'utf8');
+  await writeConfig(cwd, `export default {
+    forks: ['legacy-demo'],
+  };`);
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const handler = createJsonDbRequestHandler(db);
+  const mainUsers = makeResponse();
+  const forkUsers = makeResponse();
+  const forkBatch = makeResponse();
+  const forkSchema = makeResponse();
+  const forkGraphql = makeResponse();
+
+  assert.equal(await handler(makeRequest('GET', '/users'), mainUsers), true);
+  assert.equal(await handler(makeRequest('GET', '/__jsondb/forks/legacy-demo/rest/users'), forkUsers), true);
+  assert.equal(await handler(makeRequest('POST', '/__jsondb/forks/legacy-demo/batch', [
+    { method: 'GET', path: '/users' },
+  ]), forkBatch), true);
+  assert.equal(await handler(makeRequest('GET', '/__jsondb/forks/legacy-demo/schema'), forkSchema), true);
+  assert.equal(await handler(makeRequest('POST', '/__jsondb/forks/legacy-demo/graphql', {
+    query: '{ users { id fullName } }',
+  }), forkGraphql), true);
+
+  assert.deepEqual(mainUsers.json(), [{ id: 'u_main', name: 'Main Ada' }]);
+  assert.deepEqual(forkUsers.json(), [{ id: 'u_legacy', fullName: 'Legacy Ada' }]);
+  assert.equal(forkBatch.json()[0].body[0].id, 'u_legacy');
+  assert.equal(forkSchema.json().resources.users.fields.fullName.type, 'string');
+  assert.deepEqual(forkGraphql.json().data.users, [{ id: 'u_legacy', fullName: 'Legacy Ada' }]);
+});
+
+test('request handler returns a structured 404 for unknown forks', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const handler = createJsonDbRequestHandler(db);
+  const response = makeResponse();
+
+  assert.equal(await handler(makeRequest('GET', '/__jsondb/forks/missing/rest/users'), response), true);
+  assert.equal(response.status, 404);
+  assert.equal(response.json().error.code, 'FORK_NOT_FOUND');
 });
 
 function makeRequest(method, path, body) {

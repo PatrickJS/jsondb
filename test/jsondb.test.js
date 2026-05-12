@@ -381,6 +381,21 @@ test('doctor reports duplicate ids and inconsistent field types', async () => {
   assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_INCONSISTENT_FIELD_TYPES' && finding.field === 'done'), true);
 });
 
+test('doctor validates configured fork folders', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await writeConfig(cwd, `export default {
+    forks: ['legacy-demo', '../unsafe'],
+  };`);
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+
+  assert.equal(result.summary.error, 2);
+  assert.equal(result.findings.some((finding) => finding.code === 'FORK_SOURCE_MISSING' && finding.details?.fork === 'legacy-demo'), true);
+  assert.equal(result.findings.some((finding) => finding.code === 'FORK_NAME_INVALID' && finding.details?.fork === '../unsafe'), true);
+});
+
 test('doctor CLI supports json output and strict check alias', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'todos.json', JSON.stringify([

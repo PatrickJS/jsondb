@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { openJsonFixtureDb } from './db.js';
 import { serializeError } from './errors.js';
+import { loadForkDb } from './features/forks.js';
 import { handleGraphqlRequest } from './graphql/http.js';
 import { runMockBehavior } from './mock.js';
 import { handleRestRequest, sendJson } from './rest/handler.js';
@@ -73,6 +74,24 @@ export function createJsonDbRequestHandler(db, options = {}) {
 
 async function handleRequest(db, request, response, events, routes) {
   const url = new URL(request.url, 'http://jsondb.local');
+  const forkName = forkNameForRequest(url, routes);
+  if (forkName) {
+    try {
+      const forkDb = await loadForkDb(db, forkName, openJsonFixtureDb);
+      const forkRoutes = resolveRequestRoutes(forkDb.config, {
+        ...routes,
+        apiBase: forkApiBase(routes, forkName),
+        rootRoutes: false,
+        restBasePath: `${forkApiBase(routes, forkName)}/rest`,
+        graphqlPath: `${forkApiBase(routes, forkName)}/graphql`,
+      });
+      return handleRequest(forkDb, request, response, events, forkRoutes);
+    } catch (error) {
+      sendJson(response, error.status ?? 500, serializeError(error, 'SERVER_ERROR'));
+      return true;
+    }
+  }
+
   if (request.method === 'GET' && url.pathname === routes.eventsPath) {
     events.subscribe(request, response, db);
     return true;
@@ -285,6 +304,20 @@ function resolveRequestRoutes(config, options) {
   };
 }
 
+function forkNameForRequest(url, routes) {
+  const prefix = `${routes.apiBase || ''}/forks/` || '/forks/';
+  if (!url.pathname.startsWith(prefix)) {
+    return null;
+  }
+
+  const [rawName] = url.pathname.slice(prefix.length).split('/');
+  return rawName ? decodeURIComponent(rawName) : null;
+}
+
+function forkApiBase(routes, forkName) {
+  return joinPaths(routes.apiBase || '', `/forks/${encodeURIComponent(forkName)}`);
+}
+
 function restUrlForRequest(url, routes) {
   if (routes.restBasePath && pathStartsWith(url.pathname, routes.restBasePath)) {
     return stripPathBase(url, routes.restBasePath);
@@ -299,6 +332,15 @@ function restUrlForRequest(url, routes) {
   }
 
   return null;
+}
+
+function joinPaths(basePath, routePath) {
+  const base = `/${String(basePath ?? '').replace(/^\/+/, '').replace(/\/+$/, '')}`;
+  const route = `/${String(routePath ?? '').replace(/^\/+/, '')}`;
+  if (base === '/') {
+    return route;
+  }
+  return `${base}${route === '/' ? '' : route}`;
 }
 
 function stripPathBase(url, basePath) {

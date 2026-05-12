@@ -231,6 +231,48 @@ test('client can target scoped REST base paths for Vite dev APIs', async () => {
   ]);
 });
 
+test('client fork option derives scoped REST, batch, and GraphQL paths', async () => {
+  const calls = withMockFetch([
+    {
+      status: 200,
+      headers: {},
+      body: [{ id: 'u_legacy' }],
+    },
+    [
+      {
+        status: 200,
+        headers: {},
+        body: [{ id: 'u_legacy' }],
+      },
+    ],
+    {
+      data: {
+        users: [{ id: 'u_legacy' }],
+      },
+    },
+  ]);
+
+  const client = createJsonDbClient({
+    baseUrl: 'http://jsondb.local',
+    fork: 'legacy-demo',
+  });
+
+  await client.rest.get('/users');
+  await client.rest.batch([{ method: 'GET', path: '/users' }]);
+  await client.graphql('{ users { id } }');
+
+  assert.equal(calls[0].url, 'http://jsondb.local/__jsondb/forks/legacy-demo/rest/users');
+  assert.equal(calls[1].url, 'http://jsondb.local/__jsondb/forks/legacy-demo/batch');
+  assert.equal(calls[2].url, 'http://jsondb.local/__jsondb/forks/legacy-demo/graphql');
+});
+
+test('client fork option rejects unsafe fork names', () => {
+  assert.throws(
+    () => createJsonDbClient({ fork: '../legacy-demo' }),
+    /Invalid jsondb fork name/,
+  );
+});
+
 test('client supports relative scoped REST paths without baseUrl', async () => {
   const calls = withMockFetch([
     {

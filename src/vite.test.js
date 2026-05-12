@@ -17,6 +17,21 @@ test('jsondb Vite plugin is serve-only and exposes a virtual client module', asy
   assert.match(loaded, /restBasePath: "\/__jsondb\/rest"/);
   assert.match(loaded, /graphqlPath: "\/__jsondb\/graphql"/);
   assert.match(loaded, /restBatchPath: "\/__jsondb\/batch"/);
+  assert.match(loaded, /export function fork/);
+  assert.match(loaded, /client\.fork = fork/);
+});
+
+test('jsondb Vite virtual client creates fork clients under the configured apiBase', async () => {
+  const plugin = jsondbPlugin({
+    apiBase: '/local-data',
+  });
+
+  const loaded = await plugin.load('\0virtual:jsondb/client');
+
+  assert.match(loaded, /const forkBase = `\/local-data\/forks\/\$\{encodeURIComponent\(forkName\)\}`;/);
+  assert.match(loaded, /restBasePath: `\$\{forkBase\}\/rest`/);
+  assert.match(loaded, /restBatchPath: `\$\{forkBase\}\/batch`/);
+  assert.match(loaded, /graphqlPath: `\$\{forkBase\}\/graphql`/);
 });
 
 test('jsondb Vite plugin can render a custom client import for the virtual module', async () => {

@@ -2,7 +2,10 @@ import { jsonDbError } from './errors.js';
 
 export function createJsonDbClient(options = {}) {
   const baseUrl = options.baseUrl ?? '';
-  const restBasePath = options.restBasePath ?? '';
+  const forkPaths = forkPathsForOptions(options);
+  const restBasePath = options.restBasePath ?? forkPaths.restBasePath ?? '';
+  const graphqlPath = options.graphqlPath ?? forkPaths.graphqlPath ?? '/graphql';
+  const restBatchPath = options.restBatchPath ?? forkPaths.restBatchPath ?? '/__jsondb/batch';
   const batching = normalizeBatching(options.batching);
 
   const graphqlQueue = createQueue((requests) => graphqlBatch(requests), batching, {
@@ -18,11 +21,11 @@ export function createJsonDbClient(options = {}) {
       return graphqlQueue({ request });
     }
 
-    return postJson(resolveUrl(baseUrl, options.graphqlPath ?? '/graphql'), request);
+    return postJson(resolveUrl(baseUrl, graphqlPath), request);
   }
 
   async function graphqlBatch(requests) {
-    return postJson(resolveUrl(baseUrl, options.graphqlPath ?? '/graphql'), requests);
+    return postJson(resolveUrl(baseUrl, graphqlPath), requests);
   }
 
   async function rest(method, path, body, requestOptions = {}) {
@@ -55,7 +58,7 @@ export function createJsonDbClient(options = {}) {
   }
 
   async function restBatch(requests) {
-    return postJson(resolveUrl(baseUrl, options.restBatchPath ?? '/__jsondb/batch'), requests.map(normalizeRestRequestObject));
+    return postJson(resolveUrl(baseUrl, restBatchPath), requests.map(normalizeRestRequestObject));
   }
 
   graphql.batch = graphqlBatch;
@@ -72,6 +75,47 @@ export function createJsonDbClient(options = {}) {
     graphql,
     rest,
   };
+}
+
+function forkPathsForOptions(options) {
+  if (!options.fork) {
+    return {};
+  }
+
+  if (options.restBasePath || options.graphqlPath || options.restBatchPath) {
+    throw jsonDbError(
+      'CLIENT_FORK_PATH_CONFLICT',
+      'The client fork option cannot be combined with manual REST, batch, or GraphQL paths.',
+      {
+        hint: 'Use either { fork: "legacy-demo" } or explicit restBasePath/graphqlPath/restBatchPath options.',
+      },
+    );
+  }
+
+  const fork = normalizeForkName(options.fork);
+  const base = `/__jsondb/forks/${encodeURIComponent(fork)}`;
+  return {
+    restBasePath: `${base}/rest`,
+    restBatchPath: `${base}/batch`,
+    graphqlPath: `${base}/graphql`,
+  };
+}
+
+function normalizeForkName(value) {
+  const name = String(value ?? '');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) {
+    throw jsonDbError(
+      'CLIENT_INVALID_FORK_NAME',
+      `Invalid jsondb fork name "${name}".`,
+      {
+        hint: 'Use a folder-style name with letters, numbers, underscores, or hyphens, such as "legacy-demo".',
+        details: {
+          fork: name,
+        },
+      },
+    );
+  }
+  return name;
 }
 
 function normalizeBatching(value) {

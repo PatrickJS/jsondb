@@ -5,6 +5,21 @@ export type JsonDbTypeMap = {
   documents: Record<string, unknown>;
 };
 
+export type JsonDbGeneratedTypesOptions = {
+  /** Generate TypeScript types during sync. */
+  enabled?: boolean;
+  /** Gitignored generated type output. Defaults to "./.jsondb/types/index.ts". */
+  outFile?: string;
+  /** Optional committed copy for app/CI imports. */
+  commitOutFile?: string | null;
+  /** Emit readonly object properties in generated types. */
+  useReadonly?: boolean;
+  /** Emit JSDoc from schema field descriptions. */
+  emitComments?: boolean;
+  /** Export JsonDbCollections, JsonDbDocuments, and JsonDbTypes helpers. */
+  exportRuntimeHelpers?: boolean;
+};
+
 export type JsonDbOptions = {
   /** Project root used to resolve relative config paths. Defaults to process.cwd(). */
   cwd?: string;
@@ -22,20 +37,7 @@ export type JsonDbOptions = {
   syncOnOpen?: boolean;
   /** Keep valid resources available when one source file has diagnostics. */
   allowSourceErrors?: boolean;
-  types?: {
-    /** Generate TypeScript types during sync. */
-    enabled?: boolean;
-    /** Gitignored generated type output. Defaults to "./.jsondb/types/index.ts". */
-    outFile?: string;
-    /** Optional committed copy for app/CI imports. */
-    commitOutFile?: string | null;
-    /** Emit readonly object properties in generated types. */
-    useReadonly?: boolean;
-    /** Emit JSDoc from schema field descriptions. */
-    emitComments?: boolean;
-    /** Export JsonDbCollections, JsonDbDocuments, and JsonDbTypes helpers. */
-    exportRuntimeHelpers?: boolean;
-  };
+  types?: JsonDbGeneratedTypesOptions;
   schema?: {
     /** Which inputs define schemas. "auto" uses schema files when present and otherwise infers from data. */
     source?: 'auto' | 'data' | 'schema';
@@ -98,6 +100,17 @@ export type JsonDbOptions = {
       message?: string;
     } | null;
   };
+  /** Named database forks, usually stored under ./db.forks/<name>. */
+  forks?: string[] | Record<string, string | {
+    /** Fork fixture source folder. Defaults to "./db.forks/<name>". */
+    dbDir?: string;
+    /** Backwards-compatible source folder alias. If set, it wins over dbDir. */
+    sourceDir?: string;
+    /** Fork generated runtime output folder. Defaults to "./.jsondb/forks/<name>". */
+    stateDir?: string;
+    /** Fork-specific generated type output. Committed type output is disabled by default for forks. */
+    types?: JsonDbGeneratedTypesOptions;
+  }>;
   generate?: {
     hono?: {
       /** Output folder for generated starter code. */
@@ -161,6 +174,8 @@ export type RestBatchResult = {
 
 export type JsonDbClientOptions = {
   baseUrl?: string;
+  /** Target a configured database fork, such as "legacy-demo". */
+  fork?: string;
   restBasePath?: string;
   graphqlPath?: string;
   restBatchPath?: string;

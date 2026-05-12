@@ -1,5 +1,6 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeForks } from './features/forks.js';
 import { pathToFileURL } from 'node:url';
 import { resolveFrom } from './fs-utils.js';
 
@@ -49,6 +50,7 @@ export const DEFAULT_CONFIG = {
     delay: [30, 100],
     errors: null,
   },
+  forks: {},
   generate: {
     hono: {
       outDir: './jsondb-api',
@@ -96,6 +98,8 @@ export async function loadConfig(options = {}) {
   if (merged.types?.commitOutFile) {
     merged.types.commitOutFile = resolveFrom(cwd, merged.types.commitOutFile);
   }
+
+  merged.forks = normalizeForks(merged, merged.forks);
 
   return merged;
 }
