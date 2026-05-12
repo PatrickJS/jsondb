@@ -14,6 +14,12 @@ export type FieldOptions<DefaultValue> = {
   description?: string;
   default?: DefaultValue;
   relation?: RelationDefinition;
+  unique?: boolean;
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
 };
 
 export type RelationDefinition = {

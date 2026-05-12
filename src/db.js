@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { loadConfig } from './config.js';
 import { jsonDbError, listChoices } from './errors.js';
-import { assertRecordMatchesResource } from './schema.js';
+import { assertRecordMatchesResource, validateUniqueCollectionFields } from './schema.js';
 import { loadProjectSchema } from './schema.js';
 import { syncJsonFixtureDb, applyDefaultsToRecord } from './sync.js';
 import { readJsonState, statePathForResource, withJsonStateWrite, writeJsonState } from './state.js';
@@ -126,6 +126,7 @@ export class JsonDbCollection {
         );
       }
 
+      assertUniqueCollectionRecords([...records, nextRecord], this.resource);
       records.push(nextRecord);
       await writeJsonState(this.path, records);
       return nextRecord;
@@ -146,14 +147,16 @@ export class JsonDbCollection {
         ...patch,
         [this.resource.idField]: existingId,
       };
-      records[index] = this.config.defaults?.applyOnCreate === false
+      const nextRecords = [...records];
+      nextRecords[index] = this.config.defaults?.applyOnCreate === false
         ? nextRecord
         : applyDefaultsToRecord(nextRecord, this.resource);
-      assertRecordMatchesResource(records[index], this.resource, this.config, {
+      assertRecordMatchesResource(nextRecords[index], this.resource, this.config, {
         source: `${this.resource.name} patch body`,
       });
-      await writeJsonState(this.path, records);
-      return records[index];
+      assertUniqueCollectionRecords(nextRecords, this.resource);
+      await writeJsonState(this.path, nextRecords);
+      return nextRecords[index];
     });
   }
 
@@ -169,6 +172,26 @@ export class JsonDbCollection {
       return nextRecords.length !== records.length;
     });
   }
+}
+
+function assertUniqueCollectionRecords(records, resource) {
+  const diagnostics = validateUniqueCollectionFields(resource, records).filter((diagnostic) => diagnostic.severity === 'error');
+  if (diagnostics.length === 0) {
+    return;
+  }
+
+  throw jsonDbError(
+    'DB_SCHEMA_VALIDATION_FAILED',
+    `${resource.name} record does not match its schema: ${diagnostics[0].message}`,
+    {
+      status: 400,
+      hint: 'Update the record to satisfy unique schema fields.',
+      details: {
+        resource: resource.name,
+        diagnostics,
+      },
+    },
+  );
 }
 
 function idMatches(left, right) {

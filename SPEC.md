@@ -95,6 +95,8 @@ db/users.schema.jsonc
     "email": {
       "type": "string",
       "required": true,
+      "unique": true,
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
       "description": "Unique email address."
     },
 
@@ -126,6 +128,15 @@ TypeScript source
 REST/GraphQL source
 optional default seed data
 documentation source
+```
+
+Field schemas may declare practical local constraints:
+
+```txt
+unique: true              collection values must not repeat
+min/max                   numeric lower and upper bounds
+minLength/maxLength       string or array length bounds
+pattern                   JavaScript RegExp source for string values
 ```
 
 ### Mixed Mode
@@ -692,7 +703,7 @@ POST /__jsondb/batch
 
 REST batches are non-transactional by design. Items execute in order, and earlier successful writes remain committed if a later item fails.
 
-Schema-backed writes should validate declared field types before mutating runtime state. Required fields, primitive types, enum values, arrays, nullable fields, datetime strings, flexible objects with intentional additional properties, and nested objects should be checked for package API writes, REST writes, GraphQL mutations, `jsondb sync`, and `jsondb schema validate`.
+Schema-backed writes should validate declared field types before mutating runtime state. Required fields, primitive types, enum values, arrays, nullable fields, datetime strings, flexible objects with intentional additional properties, nested objects, and field constraints (`unique`, `min`, `max`, `minLength`, `maxLength`, `pattern`) should be checked for package API writes, REST writes, GraphQL mutations, `jsondb sync`, and `jsondb schema validate`.
 
 The root route should work as a discovery endpoint. API-style requests to `GET /` should return JSON with resource names plus links for the data viewer, schema endpoint, GraphQL endpoint, and resource routes. Browser-style requests that prefer `text/html` should return a small HTML index with those same links.
 

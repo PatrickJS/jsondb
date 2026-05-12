@@ -135,6 +135,16 @@ export function normalizeField(field, fieldName = '') {
     normalized.default = field.default;
   }
 
+  if ('unique' in field) {
+    normalized.unique = Boolean(field.unique);
+  }
+
+  for (const constraintName of ['min', 'max', 'minLength', 'maxLength', 'pattern']) {
+    if (constraintName in field) {
+      normalized[constraintName] = field[constraintName];
+    }
+  }
+
   if (field.relation && typeof field.relation === 'object' && !Array.isArray(field.relation)) {
     normalized.relation = normalizeRelation(field.relation, fieldName);
   }
@@ -247,7 +257,7 @@ export function assertRecordMatchesResource(record, resource, config, options = 
     `${resource.name} record does not match its schema: ${diagnostics[0].message}`,
     {
       status: 400,
-      hint: 'Update the record to match the schema field types, required fields, and enum values.',
+      hint: 'Update the record to match the schema field types, required fields, enum values, and constraints.',
       details: {
         resource: resource.name,
         diagnostics,
@@ -331,11 +341,11 @@ export function validateValueAgainstField(value, field, context) {
     case 'unknown':
       return diagnostics;
     case 'string':
-      return typeof value === 'string' ? diagnostics : [typeMismatch(context, expected, value)];
+      return typeof value === 'string' ? validateFieldConstraints(value, field, context) : [typeMismatch(context, expected, value)];
     case 'datetime':
-      return typeof value === 'string' ? diagnostics : [typeMismatch(context, expected, value)];
+      return typeof value === 'string' ? validateFieldConstraints(value, field, context) : [typeMismatch(context, expected, value)];
     case 'number':
-      return typeof value === 'number' && Number.isFinite(value) ? diagnostics : [typeMismatch(context, expected, value)];
+      return typeof value === 'number' && Number.isFinite(value) ? validateFieldConstraints(value, field, context) : [typeMismatch(context, expected, value)];
     case 'boolean':
       return typeof value === 'boolean' ? diagnostics : [typeMismatch(context, expected, value)];
     case 'enum':
@@ -359,6 +369,7 @@ export function validateValueAgainstField(value, field, context) {
       if (!Array.isArray(value)) {
         return [typeMismatch(context, expected, value)];
       }
+      diagnostics.push(...validateFieldConstraints(value, field, context));
       for (const [index, item] of value.entries()) {
         diagnostics.push(...validateValueAgainstField(item, field.items ?? { type: 'unknown' }, {
           ...context,
@@ -373,6 +384,114 @@ export function validateValueAgainstField(value, field, context) {
       return validateObjectFields(value, field, context);
     default:
       return diagnostics;
+  }
+}
+
+function validateFieldConstraints(value, field, context) {
+  const diagnostics = [];
+
+  if (typeof value === 'number') {
+    if (Number.isFinite(field.min) && value < field.min) {
+      diagnostics.push(constraintViolation(context, field, value, {
+        constraint: 'min',
+        message: `must be at least ${field.min}`,
+        expected: field.min,
+      }));
+    }
+
+    if (Number.isFinite(field.max) && value > field.max) {
+      diagnostics.push(constraintViolation(context, field, value, {
+        constraint: 'max',
+        message: `must be at most ${field.max}`,
+        expected: field.max,
+      }));
+    }
+  }
+
+  if (typeof value === 'string' || Array.isArray(value)) {
+    if (Number.isFinite(field.minLength) && value.length < field.minLength) {
+      diagnostics.push(constraintViolation(context, field, value, {
+        constraint: 'minLength',
+        message: `length must be at least ${field.minLength}`,
+        expected: field.minLength,
+        actual: value.length,
+      }));
+    }
+
+    if (Number.isFinite(field.maxLength) && value.length > field.maxLength) {
+      diagnostics.push(constraintViolation(context, field, value, {
+        constraint: 'maxLength',
+        message: `length must be at most ${field.maxLength}`,
+        expected: field.maxLength,
+        actual: value.length,
+      }));
+    }
+  }
+
+  if (typeof value === 'string' && field.pattern !== undefined) {
+    const pattern = String(field.pattern);
+    let regexp;
+    try {
+      regexp = new RegExp(pattern);
+    } catch (error) {
+      diagnostics.push({
+        code: 'SCHEMA_FIELD_CONSTRAINT_INVALID',
+        severity: 'error',
+        resource: context.resource.name,
+        field: context.fieldPath,
+        message: `${context.resource.name} field "${context.fieldPath}" has invalid pattern ${JSON.stringify(pattern)}: ${error.message}`,
+        hint: 'Use a valid JavaScript regular expression source string for pattern.',
+        details: {
+          constraint: 'pattern',
+          pattern,
+          parserMessage: error.message,
+        },
+      });
+      return diagnostics;
+    }
+
+    if (!regexp.test(value)) {
+      diagnostics.push(constraintViolation(context, field, value, {
+        constraint: 'pattern',
+        message: `violates pattern ${JSON.stringify(pattern)}`,
+        expected: pattern,
+      }));
+    }
+  }
+
+  return diagnostics;
+}
+
+function constraintViolation(context, field, value, options) {
+  return {
+    code: 'SCHEMA_FIELD_CONSTRAINT_VIOLATION',
+    severity: 'error',
+    resource: context.resource.name,
+    field: context.fieldPath,
+    message: `${context.resource.name} field "${context.fieldPath}" ${options.message}`,
+    hint: constraintHint(options.constraint),
+    details: {
+      constraint: options.constraint,
+      expected: options.expected,
+      actual: options.actual,
+      received: value,
+      fieldType: field.type,
+    },
+  };
+}
+
+function constraintHint(constraint) {
+  switch (constraint) {
+    case 'pattern':
+      return 'Update the value to match the configured pattern, or relax the pattern in the schema.';
+    case 'min':
+    case 'max':
+      return 'Update the number to stay within the configured schema range.';
+    case 'minLength':
+    case 'maxLength':
+      return 'Update the value length to stay within the configured schema bounds.';
+    default:
+      return 'Update the value or relax the schema constraint.';
   }
 }
 
@@ -781,14 +900,64 @@ function emptySeedForKind(kind) {
 
 function validateResourceSeed(resource, config) {
   if (resource.kind === 'collection') {
-    return resource.seed.flatMap((record, index) => validateRecordAgainstResource(record, resource, config, {
-      source: `${resource.name} seed record ${index}`,
-    }));
+    return [
+      ...resource.seed.flatMap((record, index) => validateRecordAgainstResource(record, resource, config, {
+        source: `${resource.name} seed record ${index}`,
+      })),
+      ...validateUniqueCollectionFields(resource),
+    ];
   }
 
   return validateRecordAgainstResource(resource.seed, resource, config, {
     source: `${resource.name} seed document`,
   });
+}
+
+export function validateUniqueCollectionFields(resource, records = resource.seed, options = {}) {
+  if (resource.kind !== 'collection' || !Array.isArray(records)) {
+    return [];
+  }
+
+  const diagnostics = [];
+  const fields = Object.entries(resource.fields ?? {}).filter(([, field]) => field.unique === true);
+
+  for (const [fieldName] of fields) {
+    const seen = new Map();
+    for (const [index, record] of records.entries()) {
+      const value = record?.[fieldName];
+      if (value === undefined || value === null || value === '') {
+        continue;
+      }
+
+      const key = JSON.stringify(value);
+      const firstIndex = seen.get(key);
+      if (firstIndex !== undefined) {
+        diagnostics.push(uniqueDuplicateDiagnostic(resource, fieldName, value, firstIndex, index, options));
+      } else {
+        seen.set(key, index);
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+export function uniqueDuplicateDiagnostic(resource, fieldName, value, firstIndex, duplicateIndex, options = {}) {
+  return {
+    code: 'SCHEMA_UNIQUE_VALUE_DUPLICATE',
+    severity: 'error',
+    resource: resource.name,
+    field: fieldName,
+    message: `${resource.name} field "${fieldName}" must be unique, but value ${JSON.stringify(value)} appears more than once`,
+    hint: `Use a unique "${fieldName}" value or remove unique: true from the schema field.`,
+    details: {
+      constraint: 'unique',
+      value,
+      firstIndex,
+      duplicateIndex,
+      source: options.source,
+    },
+  };
 }
 
 function validateProjectRelations(resources) {

@@ -160,7 +160,7 @@ See [jsondb.config.example.mjs](./jsondb.config.example.mjs) for a commented con
 
 ## Add Schema When It Pays For It
 
-Data-first fixtures are enough until the shape matters. When you need defaults, enums, required fields, descriptions, or stricter write validation, add `db/<name>.schema.json`, `db/<name>.schema.jsonc`, or `db/<name>.schema.mjs`.
+Data-first fixtures are enough until the shape matters. When you need defaults, enums, required fields, descriptions, constraints, or stricter write validation, add `db/<name>.schema.json`, `db/<name>.schema.jsonc`, or `db/<name>.schema.mjs`.
 
 Create `db/users.schema.json`:
 
@@ -174,6 +174,8 @@ Create `db/users.schema.json`:
     "email": {
       "type": "string",
       "required": true,
+      "unique": true,
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
       "description": "Email address used for local sign-in."
     },
     "role": {
@@ -192,7 +194,13 @@ Create `db/users.schema.json`:
     },
     "tags": {
       "type": "array",
+      "maxLength": 5,
       "items": { "type": "string" }
+    },
+    "score": {
+      "type": "number",
+      "min": 0,
+      "max": 100
     },
     "schemaSnapshot": {
       "type": "object",
@@ -221,6 +229,8 @@ db/users.json
 By default, unknown fields produce warnings for local development. Use [schema strictness](#schema-strictness) when you want drift to fail.
 
 Schema fields can use `nullable: true` when `null` is an intentional value. `datetime` fields validate as strings and generate TypeScript `string` types. Object fields can set `additionalProperties: true` when nested keys are intentionally flexible.
+
+Field constraints are checked during `sync`, schema validation, package API writes, REST writes, and GraphQL mutations. Use `unique: true` for collection fields that must not repeat, `min`/`max` for numbers, `minLength`/`maxLength` for strings or arrays, and `pattern` for string regular expression checks.
 
 ## Fixture Styles
 

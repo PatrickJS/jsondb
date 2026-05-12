@@ -1005,6 +1005,87 @@ test('schema validation rejects declared field type mismatches', async () => {
   await assert.rejects(() => syncJsonFixtureDb(config), /expected string/);
 });
 
+test('schema field constraints validate seed records and schema metadata', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": {
+        "type": "string",
+        "required": true,
+        "unique": true,
+        "pattern": "^[^@\\\\s]+@[^@\\\\s]+\\\\.[^@\\\\s]+$"
+      },
+      "displayName": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 20
+      },
+      "score": {
+        "type": "number",
+        "min": 0,
+        "max": 100
+      },
+      "tags": {
+        "type": "array",
+        "minLength": 1,
+        "maxLength": 2,
+        "items": { "type": "string" }
+      }
+    },
+    "seed": [
+      {
+        "id": "u_1",
+        "email": "bad-email",
+        "displayName": "A",
+        "score": -1,
+        "tags": []
+      },
+      {
+        "id": "u_2",
+        "email": "ada@example.com",
+        "displayName": "Ada Lovelace With A Very Long Name",
+        "score": 101,
+        "tags": ["one", "two", "three"]
+      },
+      {
+        "id": "u_3",
+        "email": "ada@example.com",
+        "displayName": "Ada",
+        "score": 50,
+        "tags": ["one"]
+      }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+  const errors = project.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
+
+  assert.equal(project.schema.resources.users.fields.email.unique, true);
+  assert.equal(project.schema.resources.users.fields.email.pattern, '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+  assert.equal(project.schema.resources.users.fields.score.min, 0);
+  assert.equal(project.schema.resources.users.fields.tags.maxLength, 2);
+  assert.deepEqual(
+    errors.map((diagnostic) => [diagnostic.code, diagnostic.field, diagnostic.details?.constraint]),
+    [
+      ['SCHEMA_FIELD_CONSTRAINT_VIOLATION', 'email', 'pattern'],
+      ['SCHEMA_FIELD_CONSTRAINT_VIOLATION', 'displayName', 'minLength'],
+      ['SCHEMA_FIELD_CONSTRAINT_VIOLATION', 'score', 'min'],
+      ['SCHEMA_FIELD_CONSTRAINT_VIOLATION', 'tags', 'minLength'],
+      ['SCHEMA_FIELD_CONSTRAINT_VIOLATION', 'displayName', 'maxLength'],
+      ['SCHEMA_FIELD_CONSTRAINT_VIOLATION', 'score', 'max'],
+      ['SCHEMA_FIELD_CONSTRAINT_VIOLATION', 'tags', 'maxLength'],
+      ['SCHEMA_UNIQUE_VALUE_DUPLICATE', 'email', 'unique'],
+    ],
+  );
+  assert.match(errors[0].message, /email/);
+  assert.match(errors[0].hint, /pattern/);
+  await assert.rejects(() => syncJsonFixtureDb(config), /violates pattern/);
+});
+
 test('package API rejects records that do not match schema field types', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.jsonc', `{
@@ -1030,6 +1111,62 @@ test('package API rejects records that do not match schema field types', async (
       assert.equal(error.code, 'DB_SCHEMA_VALIDATION_FAILED');
       assert.match(error.message, /email/);
       assert.equal(error.details.diagnostics[0].code, 'SCHEMA_FIELD_TYPE_MISMATCH');
+      return true;
+    },
+  );
+});
+
+test('package API rejects constrained field values and unique duplicates', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": {
+        "type": "string",
+        "required": true,
+        "unique": true,
+        "pattern": "^[^@\\\\s]+@[^@\\\\s]+\\\\.[^@\\\\s]+$"
+      },
+      "age": {
+        "type": "number",
+        "min": 13
+      }
+    },
+    "seed": [
+      { "id": "u_1", "email": "ada@example.com", "age": 28 }
+    ]
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+
+  await assert.rejects(
+    () => db.collection('users').create({
+      id: 'u_2',
+      email: 'ada@example.com',
+      age: 20,
+    }),
+    (error) => {
+      assert.equal(error.code, 'DB_SCHEMA_VALIDATION_FAILED');
+      assert.equal(error.details.diagnostics[0].code, 'SCHEMA_UNIQUE_VALUE_DUPLICATE');
+      assert.match(error.details.diagnostics[0].message, /email/);
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    () => db.collection('users').create({
+      id: 'u_3',
+      email: 'not-an-email',
+      age: 12,
+    }),
+    (error) => {
+      assert.equal(error.code, 'DB_SCHEMA_VALIDATION_FAILED');
+      assert.deepEqual(
+        error.details.diagnostics.map((diagnostic) => diagnostic.details.constraint),
+        ['pattern', 'min'],
+      );
       return true;
     },
   );

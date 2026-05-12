@@ -396,6 +396,46 @@ test('dependency-free GraphQL mutations reject schema field type mismatches', as
   assert.equal(result.errors[0].extensions.details.diagnostics[0].code, 'SCHEMA_FIELD_TYPE_MISMATCH');
 });
 
+test('dependency-free GraphQL mutations reject schema constraint violations', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": {
+        "type": "string",
+        "required": true,
+        "unique": true,
+        "pattern": "^[^@\\\\s]+@[^@\\\\s]+\\\\.[^@\\\\s]+$"
+      },
+      "age": {
+        "type": "number",
+        "min": 13
+      }
+    },
+    "seed": [
+      { "id": "u_1", "email": "ada@example.com", "age": 28 }
+    ]
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: `mutation {
+      createUser(input: { id: "u_2", email: "bad-email", age: 12 }) {
+        id
+      }
+    }`,
+  });
+
+  assert.equal(result.data, null);
+  assert.equal(result.errors[0].extensions.code, 'DB_SCHEMA_VALIDATION_FAILED');
+  assert.deepEqual(
+    result.errors[0].extensions.details.diagnostics.map((diagnostic) => diagnostic.details.constraint),
+    ['pattern', 'min'],
+  );
+});
+
 test('dependency-free GraphQL document queries and mutations work', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'settings.json', JSON.stringify({
