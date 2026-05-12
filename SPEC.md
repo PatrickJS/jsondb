@@ -192,6 +192,23 @@ Projects can customize the output location:
 export default {
   dbDir: './db',
   stateDir: './.jsondb',
+  schemaOutFile: './src/generated/jsondb.schema.json',
+
+  schemaManifest: {
+    customizeField({ fieldName, defaultManifest }) {
+      if (fieldName.endsWith('Markdown')) {
+        return {
+          ...defaultManifest,
+          ui: {
+            ...defaultManifest.ui,
+            component: 'markdown',
+          },
+        };
+      }
+
+      return defaultManifest;
+    },
+  },
 
   types: {
     enabled: true,
@@ -615,10 +632,11 @@ Add schema commands:
 ```bash
 jsondb schema
 jsondb schema users
+jsondb schema manifest --out ./src/generated/jsondb.schema.json
 jsondb schema validate
 ```
 
-`jsondb sync` should also regenerate types.
+`jsondb sync` should also regenerate types and should write the committed schema manifest when `schemaOutFile` is configured.
 
 Expected output:
 
@@ -628,6 +646,7 @@ Loaded db/posts.json
 Generated .jsondb/schema.generated.json
 Generated .jsondb/types/index.ts
 Generated src/generated/jsondb.types.ts
+Generated src/generated/jsondb.schema.json
 Synced runtime mirror
 ```
 
@@ -996,6 +1015,90 @@ export type User = {
 ```
 
 Use schema field descriptions to emit JSDoc comments.
+
+## Schema manifest output and model-driven admin UIs
+
+Add optional JSON schema manifest generation for local-first admin/CMS UIs that render forms from JSONDB models instead of duplicating per-resource form configuration.
+
+This is separate from `.jsondb/schema.generated.json`. The existing generated schema file remains runtime/server metadata and may include diagnostics, source paths, seeds, REST route lists, and GraphQL SDL. The committed manifest is a small importable artifact for applications.
+
+Configure it with:
+
+```js
+export default {
+  schemaOutFile: './src/generated/jsondb.schema.json',
+};
+```
+
+When `schemaOutFile` is set, `jsondb sync` writes the manifest. The CLI can also write one directly:
+
+```bash
+jsondb schema manifest --out ./src/generated/jsondb.schema.json
+```
+
+The manifest should have this top-level shape:
+
+```json
+{
+  "version": 1,
+  "collections": {},
+  "documents": {}
+}
+```
+
+Each resource entry should include `kind`, `name`, `idField` for collections, optional `description`, and `fields`. Each field should include normalized field metadata such as `type`, `required`, `nullable`, `default`, `values`, nested object `fields`, array `items`, `relation`, constraints, and inferred `ui` defaults.
+
+The manifest must not include seed records, source hashes, source paths, runtime state, diagnostics, REST route lists, or GraphQL SDL.
+
+Default UI inference should be deterministic and safe:
+
+```txt
+boolean -> toggle
+small enum -> radio
+larger enum -> select
+email-like field name -> email
+url-like field name -> url
+image/avatar/photo-like field name -> image
+description/body/content/notes/bio/markdown-like field name -> textarea
+array<string> -> tags
+array<enum> -> multiSelect
+object with declared fields -> fieldset
+open object or unknown field -> json
+relation field -> relationSelect with optionsFrom
+collection id field -> readonly
+```
+
+Manifest defaults are metadata only. They must not change fixtures, seed data, runtime state, validation, REST, or GraphQL behavior.
+
+Apps can customize or omit field entries with a visitor hook:
+
+```js
+export default {
+  schemaManifest: {
+    customizeField({ field, fieldName, resource, resourceName, path, file, sourceFile, defaultManifest }) {
+      if (resourceName === 'users' && fieldName === 'passwordHash') {
+        return null;
+      }
+
+      if (fieldName.endsWith('Markdown')) {
+        return {
+          ...defaultManifest,
+          ui: {
+            ...defaultManifest.ui,
+            component: 'markdown',
+          },
+        };
+      }
+
+      return defaultManifest;
+    },
+  },
+};
+```
+
+The visitor return value must be JSON-serializable. Functions, classes, symbols, bigint values, non-finite numbers, and non-plain objects should fail generation with a diagnostic that includes resource and field path. Returning `null` omits the field from the manifest.
+
+The intended first use is permissioned admin CRUD for resources such as dashboards, users, and permission policies. Admin screens can map manifest field metadata to reusable create/edit/view components while policy checks decide whether fields are hidden, readonly, or editable for a given session.
 
 Support schema-only fixtures.
 

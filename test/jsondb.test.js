@@ -876,6 +876,189 @@ test('types.commitOutFile writes a committed type copy', async () => {
   assert.match(committedTypes, /users: User;/);
 });
 
+test('schemaOutFile writes a committed manifest with inferred UI defaults without changing fixtures', async () => {
+  const cwd = await makeProject();
+  const usersFixture = JSON.stringify([
+    {
+      id: 'u_1',
+      email: 'ada@example.com',
+      active: true,
+      avatarUrl: 'https://example.com/ada.png',
+      body: 'First local admin user.',
+    },
+  ]);
+  await writeConfig(cwd, `export default {
+    schemaOutFile: './src/generated/jsondb.schema.json'
+  };`);
+  await writeFixture(cwd, 'users.json', usersFixture);
+
+  const config = await loadConfig({ cwd });
+  await syncJsonFixtureDb(config);
+
+  const manifest = JSON.parse(await readFile(path.join(cwd, 'src/generated/jsondb.schema.json'), 'utf8'));
+  const sourceAfterSync = await readFile(path.join(cwd, 'db/users.json'), 'utf8');
+
+  assert.equal(sourceAfterSync, `${usersFixture}\n`);
+  assert.equal(manifest.version, 1);
+  assert.deepEqual(Object.keys(manifest.documents), []);
+  assert.equal(manifest.collections.users.kind, 'collection');
+  assert.equal(manifest.collections.users.name, 'users');
+  assert.equal(manifest.collections.users.idField, 'id');
+  assert.equal(manifest.collections.users.fields.id.ui.readonly, true);
+  assert.equal(manifest.collections.users.fields.email.ui.component, 'email');
+  assert.equal(manifest.collections.users.fields.active.ui.component, 'toggle');
+  assert.equal(manifest.collections.users.fields.avatarUrl.ui.component, 'image');
+  assert.equal(manifest.collections.users.fields.body.ui.component, 'textarea');
+  assert.equal(manifest.collections.users.fields.email.required, true);
+  assert.equal('seed' in manifest.collections.users, false);
+  assert.equal('source' in manifest.collections.users, false);
+  assert.equal('diagnostics' in manifest, false);
+  assert.equal('graphql' in manifest, false);
+  assert.equal('rest' in manifest, false);
+});
+
+test('schema manifest includes schema defaults, nested fields, arrays, relations, and enum UI defaults', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    schemaOutFile: './src/generated/jsondb.schema.json'
+  };`);
+  await writeFixture(cwd, 'groups.schema.jsonc', `{
+    "kind": "collection",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    }
+  }`);
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "role": { "type": "enum", "values": ["admin", "user"], "default": "user" },
+      "status": { "type": "enum", "values": ["draft", "review", "published", "archived"] },
+      "groupId": { "type": "string", "relation": { "to": "groups" } },
+      "tags": { "type": "array", "items": { "type": "string" } },
+      "profile": {
+        "type": "object",
+        "fields": {
+          "bio": { "type": "string" }
+        }
+      }
+    }
+  }`);
+
+  const config = await loadConfig({ cwd });
+  await syncJsonFixtureDb(config);
+
+  const manifest = JSON.parse(await readFile(path.join(cwd, 'src/generated/jsondb.schema.json'), 'utf8'));
+  const users = manifest.collections.users;
+
+  assert.equal(users.fields.role.default, 'user');
+  assert.deepEqual(users.fields.role.values, ['admin', 'user']);
+  assert.equal(users.fields.role.ui.component, 'radio');
+  assert.equal(users.fields.status.ui.component, 'select');
+  assert.equal(users.fields.groupId.ui.component, 'relationSelect');
+  assert.equal(users.fields.groupId.ui.optionsFrom, 'groups');
+  assert.equal(users.fields.tags.ui.component, 'tags');
+  assert.equal(users.fields.tags.items.type, 'string');
+  assert.equal(users.fields.profile.ui.component, 'fieldset');
+  assert.equal(users.fields.profile.fields.bio.ui.component, 'textarea');
+});
+
+test('schema manifest customizeField can override and omit field output', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    schemaOutFile: './src/generated/jsondb.schema.json',
+    schemaManifest: {
+      customizeField({ fieldName, resourceName, path, file, defaultManifest }) {
+        if (fieldName === 'secret') {
+          return null;
+        }
+
+        if (resourceName === 'users' && fieldName.endsWith('Markdown')) {
+          return {
+            ...defaultManifest,
+            ui: {
+              ...defaultManifest.ui,
+              component: 'markdown',
+              section: \`\${file}:\${path}\`
+            }
+          };
+        }
+
+        return defaultManifest;
+      }
+    }
+  };`);
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      bioMarkdown: '# Ada',
+      secret: 'hidden',
+    },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  await syncJsonFixtureDb(config);
+
+  const manifest = JSON.parse(await readFile(path.join(cwd, 'src/generated/jsondb.schema.json'), 'utf8'));
+
+  assert.equal(manifest.collections.users.fields.bioMarkdown.ui.component, 'markdown');
+  assert.equal(manifest.collections.users.fields.bioMarkdown.ui.section, 'db/users.json:bioMarkdown');
+  assert.equal('secret' in manifest.collections.users.fields, false);
+});
+
+test('schema manifest rejects non-serializable customizeField output with diagnostics', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    schemaOutFile: './src/generated/jsondb.schema.json',
+    schemaManifest: {
+      customizeField({ defaultManifest }) {
+        return {
+          ...defaultManifest,
+          ui: {
+            ...defaultManifest.ui,
+            render: () => 'nope'
+          }
+        };
+      }
+    }
+  };`);
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+
+  const config = await loadConfig({ cwd });
+
+  await assert.rejects(
+    () => syncJsonFixtureDb(config),
+    (error) => {
+      assert.equal(error.diagnostics?.[0]?.code, 'SCHEMA_MANIFEST_FIELD_NOT_SERIALIZABLE');
+      assert.match(error.diagnostics[0].message, /users\.id/);
+      assert.match(error.diagnostics[0].hint, /JSON-serializable/);
+      return true;
+    },
+  );
+});
+
+test('CLI schema manifest --out writes relative to --cwd', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', email: 'ada@example.com' }]));
+
+  const { stdout } = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'manifest',
+    '--cwd',
+    cwd,
+    '--out',
+    './src/generated/jsondb.schema.json',
+  ]);
+
+  const manifest = JSON.parse(await readFile(path.join(cwd, 'src/generated/jsondb.schema.json'), 'utf8'));
+
+  assert.match(stdout, /Generated src\/generated\/jsondb\.schema\.json/);
+  assert.equal(manifest.collections.users.fields.email.ui.component, 'email');
+});
+
 test('strict unknown fields fail sync in mixed mode', async () => {
   const cwd = await makeProject();
   await writeConfig(cwd, `export default {

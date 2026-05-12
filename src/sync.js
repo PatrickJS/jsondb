@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { loadProjectSchema, makeGeneratedSchema } from './schema.js';
+import { generateSchemaManifest } from './schema-manifest.js';
 import { generateTypes } from './types.js';
 import { readJsonState, statePathForResource, writeJsonState } from './state.js';
 import { writeText } from './fs-utils.js';
@@ -32,6 +33,13 @@ export async function syncJsonFixtureDb(config, options = {}) {
 
   if (config.types?.enabled !== false) {
     const result = await generateTypes(config, { project });
+    for (const outFile of result.outFiles) {
+      logs.push(`Generated ${path.relative(config.cwd, outFile)}`);
+    }
+  }
+
+  if (config.schemaOutFile) {
+    const result = await generateSchemaManifest(config, { project });
     for (const outFile of result.outFiles) {
       logs.push(`Generated ${path.relative(config.cwd, outFile)}`);
     }

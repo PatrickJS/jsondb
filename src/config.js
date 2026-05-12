@@ -8,6 +8,8 @@ export const DEFAULT_CONFIG = {
   dbDir: './db',
   sourceDir: './db',
   stateDir: './.jsondb',
+  schemaOutFile: null,
+  schemaManifest: {},
   mode: 'mirror',
   types: {
     enabled: true,
@@ -97,6 +99,10 @@ export async function loadConfig(options = {}) {
 
   if (merged.types?.commitOutFile) {
     merged.types.commitOutFile = resolveFrom(cwd, merged.types.commitOutFile);
+  }
+
+  if (merged.schemaOutFile) {
+    merged.schemaOutFile = resolveFrom(cwd, merged.schemaOutFile);
   }
 
   merged.forks = normalizeForks(merged, merged.forks);

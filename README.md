@@ -124,6 +124,7 @@ The defaults are designed to be useful without `jsondb.config.mjs`. When you do 
 | Fixture folder                       | `./db`                        | [Different fixture folder](#different-fixture-folder)                     | Keep fixtures in a package, example, or app-specific folder.            |
 | Runtime state behavior               | `.jsondb`, mirror mode        | [Mirror vs source mode](#mirror-vs-source-mode)                           | Keep source fixtures clean, or intentionally write generated ids back.  |
 | Importable generated types           | `.jsondb/types/index.ts`      | [Committed generated types](#committed-generated-types)                   | Let TypeScript imports work in CI and fresh checkouts before sync runs. |
+| Importable schema manifest           | Off                           | [Schema manifest output](#schema-manifest-output)                         | Generate runtime field metadata for model-driven admin/CMS forms.       |
 | Unknown fields in schema-backed data | Warn                          | [Schema strictness](#schema-strictness)                                   | Move from permissive local data to stricter contracts.                  |
 | Schema-only mock records             | Off                           | [Generated schema seed data](#generated-schema-seed-data)                 | Create local records from schema when no fixture data exists yet.       |
 | Local latency                         | 30-100ms                      | [Mock delay and errors](#mock-delay-and-errors)                           | Disable it, use a fixed delay, or choose a different range.             |
@@ -346,6 +347,7 @@ npm run db -- types --watch
 npm run db -- types --out ./src/generated/jsondb.types.ts
 npm run db -- schema
 npm run db -- schema users
+npm run db -- schema manifest --out ./src/generated/jsondb.schema.json
 npm run db -- schema validate
 npm run db -- create users '{"id":"u_2","name":"Grace Hopper","email":"grace@example.com"}'
 npm run db -- serve
@@ -362,6 +364,7 @@ jsondb types --watch
 jsondb types --out ./src/generated/jsondb.types.ts
 jsondb schema
 jsondb schema users
+jsondb schema manifest --out ./src/generated/jsondb.schema.json
 jsondb schema validate
 jsondb create users '{"id":"u_2","name":"Grace Hopper","email":"grace@example.com"}'
 jsondb serve
@@ -800,6 +803,23 @@ export default defineConfig({
     emitComments: true,
   },
 
+  schemaOutFile: './src/generated/jsondb.schema.json',
+  schemaManifest: {
+    customizeField({ fieldName, defaultManifest }) {
+      if (fieldName.endsWith('Markdown')) {
+        return {
+          ...defaultManifest,
+          ui: {
+            ...defaultManifest.ui,
+            component: 'markdown',
+          },
+        };
+      }
+
+      return defaultManifest;
+    },
+  },
+
   schema: {
     unknownFields: 'warn', // "allow" | "warn" | "error"
   },
@@ -862,6 +882,56 @@ import { defineConfig } from 'jsondb/config';
 export default defineConfig({
   types: {
     commitOutFile: './src/generated/jsondb.types.ts',
+  },
+});
+```
+
+### Schema Manifest Output
+
+Use `schemaOutFile` when a local admin or CMS UI needs runtime schema metadata instead of hand-coded forms:
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  schemaOutFile: './src/generated/jsondb.schema.json',
+});
+```
+
+`jsondb sync` writes the manifest when `schemaOutFile` is set. You can also generate it directly:
+
+```bash
+jsondb schema manifest --out ./src/generated/jsondb.schema.json
+```
+
+The JSON manifest groups `collections` and `documents`, includes normalized field metadata such as `type`, `required`, `nullable`, `default`, `values`, nested `fields`, array `items`, and `relation`, and adds inferred `ui` defaults. Defaults are metadata only; they do not change fixtures, seed data, runtime state, REST, or GraphQL behavior.
+
+Override or omit field output with a visitor hook:
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  schemaManifest: {
+    customizeField({ fieldName, resourceName, file, path, defaultManifest }) {
+      if (resourceName === 'users' && fieldName === 'passwordHash') {
+        return null;
+      }
+
+      if (fieldName.endsWith('Markdown')) {
+        return {
+          ...defaultManifest,
+          ui: {
+            ...defaultManifest.ui,
+            component: 'markdown',
+            section: file,
+            orderKey: path,
+          },
+        };
+      }
+
+      return defaultManifest;
+    },
   },
 });
 ```
