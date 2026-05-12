@@ -85,7 +85,7 @@ test('generate hono can emit REST plus GraphQL and fixture seeding', async () =>
   assert.match(await readFile(path.join(cwd, 'api/src/app.ts'), 'utf8'), /registerRestRoutes/);
   assert.match(await readFile(path.join(cwd, 'api/src/app.ts'), 'utf8'), /registerGraphqlRoutes/);
   assert.match(await readFile(path.join(cwd, 'api/src/sqlite.ts'), 'utf8'), /seedFixtures/);
-  assert.match(await readFile(path.join(cwd, 'api/package.json'), 'utf8'), /json-fixture-db/);
+  assert.match(await readFile(path.join(cwd, 'api/package.json'), 'utf8'), /"jsondb": "\^0\.1\.0"/);
 });
 
 test('generate hono can emit SQLite-only module output', async () => {

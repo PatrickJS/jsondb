@@ -8,15 +8,24 @@ test('jsondb Vite plugin is serve-only and exposes a virtual client module', asy
     apiBase: '/__jsondb',
   });
 
-  assert.equal(plugin.name, 'json-fixture-db:vite');
+  assert.equal(plugin.name, 'jsondb:vite');
   assert.equal(plugin.apply, 'serve');
   assert.equal(await plugin.resolveId('virtual:jsondb/client'), '\0virtual:jsondb/client');
 
   const loaded = await plugin.load('\0virtual:jsondb/client');
-  assert.match(loaded, /json-fixture-db\/client/);
+  assert.match(loaded, /jsondb\/client/);
   assert.match(loaded, /restBasePath: "\/__jsondb\/rest"/);
   assert.match(loaded, /graphqlPath: "\/__jsondb\/graphql"/);
   assert.match(loaded, /restBatchPath: "\/__jsondb\/batch"/);
+});
+
+test('jsondb Vite plugin can render a custom client import for the virtual module', async () => {
+  const plugin = jsondbPlugin({
+    clientImport: '@local/jsondb/client',
+  });
+
+  const loaded = await plugin.load('\0virtual:jsondb/client');
+  assert.match(loaded, /@local\/jsondb\/client/);
 });
 
 test('jsondb Vite plugin registers middleware with Vite dev server', async () => {

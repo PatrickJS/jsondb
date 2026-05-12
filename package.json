@@ -1,5 +1,5 @@
 {
-  "name": "json-fixture-db",
+  "name": "jsondb",
   "version": "0.1.0",
   "description": "A local JSON fixture database with schema inference, generated TypeScript types, and a small runtime API.",
   "type": "module",

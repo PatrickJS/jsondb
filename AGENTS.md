@@ -2,7 +2,7 @@
 
 ## Project Shape
 
-This repo is a dependency-light Node.js ESM package named `json-fixture-db`.
+This repo is a dependency-light Node.js ESM package named `jsondb`.
 
 Core responsibilities:
 
@@ -30,7 +30,7 @@ Important files:
 - `src/sqlite.js`: optional SQLite adapter using dynamic `node:sqlite` import.
 - `src/client.js`: tiny HTTP client with GraphQL and REST batching support.
 - `scripts/serve-examples.js`: starts every repo example and serves an index of viewer links.
-- `src/schema-builders.js`: `.schema.mjs` authoring helpers exported as `json-fixture-db/schema`.
+- `src/schema-builders.js`: `.schema.mjs` authoring helpers exported as `jsondb/schema`.
 - `test/jsondb.test.js`: general Node test runner suite.
 - `test/helpers.js`: shared test project helpers.
 - `src/**/*.test.js`: co-located protocol/module tests.
@@ -94,7 +94,7 @@ Use `node:test` and temporary project directories under the system temp director
 
 Put broad package behavior in `test/*.test.js`. Put protocol-specific tests next to their implementation, such as `src/graphql/graphql.test.js` and `src/rest/handler.test.js`.
 
-When testing `.schema.mjs`, symlink this repo into the temp project's `node_modules/json-fixture-db` so package self-imports behave like a consumer install.
+When testing `.schema.mjs`, symlink this repo into the temp project's `node_modules/jsondb` so package self-imports behave like a consumer install.
 
 Add tests for every behavior change that touches:
 

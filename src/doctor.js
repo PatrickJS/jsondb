@@ -151,10 +151,12 @@ function relationSuggestionFindings(collections) {
         .map((record) => record?.[target.idField])
         .filter((value) => !isEmpty(value))
         .map((value) => String(value)));
+      const matchingValues = sourceValues
+        .filter((value) => targetValues.has(String(value)));
       const missingValues = [...new Set(sourceValues
         .filter((value) => !targetValues.has(String(value)))
         .map((value) => String(value)))];
-      const matchingCount = sourceValues.length - missingValues.length;
+      const matchingCount = matchingValues.length;
       if (matchingCount === 0) {
         continue;
       }

@@ -1,3 +1,5 @@
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+
 export type JsonDbTypeMap = {
   collections: Record<string, unknown>;
   documents: Record<string, unknown>;
@@ -213,10 +215,35 @@ export type JsonDbDoctorResult = {
   findings: JsonDbDoctorFinding[];
 };
 
+export type JsonDbRequestHandlerOptions = {
+  /** Scoped base for jsondb dev tools. Defaults to "/__jsondb". */
+  apiBase?: string;
+  /** Serve root REST routes such as "/users". Defaults to true for standalone handlers. */
+  rootRoutes?: boolean;
+  /** Scoped REST resource base, such as "/__jsondb/rest". */
+  restBasePath?: string;
+  /** GraphQL endpoint path. Defaults to configured graphql.path or "/graphql". */
+  graphqlPath?: string;
+};
+
+export type JsonDbRequestHandler = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  next?: () => void,
+) => Promise<boolean>;
+
+export type JsonDbServer = {
+  server: Server;
+  db: JsonFixtureDb;
+  url: string;
+};
+
 export function openJsonFixtureDb<Types extends JsonDbTypeMap = JsonDbTypeMap>(options?: JsonDbOptions): Promise<JsonFixtureDb<Types>>;
 export function createJsonDbClient(options?: JsonDbClientOptions): JsonDbClient;
+export function createJsonDbRequestHandler(db: JsonFixtureDb, options?: JsonDbRequestHandlerOptions): JsonDbRequestHandler;
 export function loadConfig(options?: JsonDbOptions): Promise<JsonDbOptions>;
 export function runJsonDbDoctor(config: JsonDbOptions): Promise<JsonDbDoctorResult>;
+export function startJsonDbServer(options?: JsonDbOptions & { host?: string; port?: number }): Promise<JsonDbServer>;
 export function syncJsonFixtureDb(config: JsonDbOptions, options?: { allowErrors?: boolean }): Promise<unknown>;
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
 export function generateHonoStarter(

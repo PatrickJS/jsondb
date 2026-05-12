@@ -84,11 +84,12 @@ export default defineConfig({
 
 test('consumer projects can import package APIs through the jsondb alias', async () => {
   const cwd = await makeProject();
-  await writeFile(path.join(cwd, 'check-alias.mjs'), `import { openJsonFixtureDb } from 'jsondb';
+  await writeFile(path.join(cwd, 'check-alias.mjs'), `import { createJsonDbRequestHandler, openJsonFixtureDb } from 'jsondb';
 import { createJsonDbClient } from 'jsondb/client';
 import { defineConfig } from 'jsondb/config';
 
 if (typeof openJsonFixtureDb !== 'function') throw new Error('missing package API');
+if (typeof createJsonDbRequestHandler !== 'function') throw new Error('missing request handler API');
 if (typeof createJsonDbClient !== 'function') throw new Error('missing client API');
 if (typeof defineConfig !== 'function') throw new Error('missing config API');
 `);
@@ -264,6 +265,60 @@ test('schema validation reports missing required relation targets', async () => 
   assert.match(relationDiagnostics[0].message, /missing_author/);
 });
 
+test('schema validation reports relation metadata on non-scalar source fields', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'authors.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true }
+    },
+    "seed": []
+  }`);
+  await writeFixture(cwd, 'posts.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "authorIds": {
+        "type": "array",
+        "items": { "type": "string" },
+        "relation": {
+          "name": "authors",
+          "to": "authors",
+          "toField": "id",
+          "cardinality": "one"
+        }
+      }
+    },
+    "seed": [
+      { "id": "p_1", "authorIds": ["a_1"] }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+  const relationDiagnostics = project.diagnostics.filter((diagnostic) => diagnostic.code === 'SCHEMA_RELATION_SOURCE_FIELD_INVALID');
+
+  assert.equal(relationDiagnostics.length, 1);
+  assert.equal(relationDiagnostics[0].severity, 'error');
+  assert.equal(relationDiagnostics[0].resource, 'posts');
+  assert.equal(relationDiagnostics[0].field, 'authorIds');
+  assert.match(relationDiagnostics[0].message, /posts relation "authors" source field "authorIds" must be a scalar field/);
+  assert.match(relationDiagnostics[0].hint, /Use a scalar id field/);
+  assert.deepEqual(relationDiagnostics[0].details, {
+    relation: {
+      name: 'authors',
+      sourceResource: 'posts',
+      sourceField: 'authorIds',
+      targetResource: 'authors',
+      targetField: 'id',
+      cardinality: 'one',
+    },
+    sourceFieldType: 'array',
+  });
+});
+
 test('doctor suggests likely relations without changing schema shape', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([
@@ -289,6 +344,23 @@ test('doctor suggests likely relations without changing schema shape', async () 
     cardinality: 'one',
   });
   assert.deepEqual(project.schema.resources.todos.relations, []);
+});
+
+test('doctor does not suggest missing relation targets when every duplicated value is missing', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    { id: 'u_1', name: 'Ada Lovelace' },
+  ]));
+  await writeFixture(cwd, 'todos.json', JSON.stringify([
+    { id: 't_1', title: 'First', userId: 'missing' },
+    { id: 't_2', title: 'Second', userId: 'missing' },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+
+  assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_RELATION_MISSING_TARGET_VALUES'), false);
+  assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_RELATION_SUGGESTION'), false);
 });
 
 test('doctor reports duplicate ids and inconsistent field types', async () => {

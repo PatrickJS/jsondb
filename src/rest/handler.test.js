@@ -673,6 +673,34 @@ test('REST batch errors include code hint and item index', async () => {
   assert.match(response.json()[0].body.error.hint, /absolute local paths/);
 });
 
+test('REST batch rejects nested requests to a custom apiBase batch path', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('POST', [
+      {
+        method: 'POST',
+        path: '/dev/jsondb/batch',
+        body: [],
+      },
+    ]),
+    response,
+    new URL('http://jsondb.local/dev/jsondb/batch'),
+    { apiBase: '/dev/jsondb' },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json()[0].index, 0);
+  assert.equal(response.json()[0].status, 400);
+  assert.equal(response.json()[0].body.error.code, 'REST_BATCH_NESTED_UNSUPPORTED');
+  assert.match(response.json()[0].body.error.hint, /Flatten the batch array/);
+});
+
 test('REST handler returns 413 for oversized JSON bodies', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([]));

@@ -488,13 +488,14 @@ async function executeRestBatchItem(db, item, options = {}) {
     );
   }
 
-  if (requestPath === '/__jsondb/batch') {
+  const batchPath = options.batchPath ?? `${normalizeBasePath(options.apiBase ?? '/__jsondb')}/batch`;
+  if (requestPath === batchPath || requestPath === '/__jsondb/batch') {
     throw jsonDbError(
       'REST_BATCH_NESTED_UNSUPPORTED',
       'Nested REST batch requests are not supported.',
       {
         status: 400,
-        hint: 'Flatten the batch array instead of calling /__jsondb/batch from inside another batch.',
+        hint: 'Flatten the batch array instead of calling the batch endpoint from inside another batch.',
       },
     );
   }

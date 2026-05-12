@@ -5,6 +5,6 @@ export { runJsonDbDoctor } from './doctor.js';
 export { executeGraphql, executeGraphqlBatch, parseGraphql } from './graphql/index.js';
 export { generateHonoStarter, renderHonoStarter } from './generate/hono.js';
 export { loadProjectSchema, makeGeneratedSchema } from './schema.js';
-export { startJsonDbServer } from './server.js';
+export { createJsonDbRequestHandler, startJsonDbServer } from './server.js';
 export { syncJsonFixtureDb } from './sync.js';
 export { generateTypes, renderTypes } from './types.js';

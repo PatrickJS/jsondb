@@ -11,6 +11,8 @@ export type JsonDbVitePluginOptions = Pick<JsonDbOptions, 'cwd' | 'configPath' |
   graphqlPath?: string;
   /** Virtual module id for the browser-safe client. Defaults to "virtual:jsondb/client"; false disables it. */
   clientVirtualModule?: string | false;
+  /** Import specifier used inside the virtual client. Defaults to "jsondb/client". */
+  clientImport?: string;
 };
 
 export type ViteLikePlugin = {

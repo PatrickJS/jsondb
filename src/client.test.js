@@ -231,6 +231,24 @@ test('client can target scoped REST base paths for Vite dev APIs', async () => {
   ]);
 });
 
+test('client supports relative scoped REST paths without baseUrl', async () => {
+  const calls = withMockFetch([
+    {
+      status: 200,
+      headers: {},
+      body: [],
+    },
+  ]);
+
+  const client = createJsonDbClient({
+    restBasePath: '/__jsondb/rest',
+  });
+
+  await client.rest.get('/users');
+
+  assert.equal(calls[0].url, '/__jsondb/rest/users');
+});
+
 test('client automatic batching dedupes REST GET requests but not writes by default', async () => {
   const calls = withMockFetch([
     [

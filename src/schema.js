@@ -8,6 +8,8 @@ import { readText } from './fs-utils.js';
 import { parseJsonc } from './jsonc.js';
 import { routePathForResource, typeNameForResource } from './names.js';
 
+const RELATION_SCALAR_FIELD_TYPES = new Set(['string', 'datetime', 'number', 'boolean', 'enum']);
+
 export async function loadProjectSchema(config) {
   const files = await listSourceFiles(config.sourceDir);
   const dataFiles = new Map();
@@ -795,6 +797,12 @@ function validateProjectRelations(resources) {
 
   for (const resource of resources) {
     for (const relation of resource.relations ?? []) {
+      const sourceField = resource.fields?.[relation.sourceField] ?? {};
+      const sourceFieldDiagnostic = relationSourceFieldDiagnostic(resource, relation, sourceField);
+      if (sourceFieldDiagnostic) {
+        diagnostics.push(sourceFieldDiagnostic);
+      }
+
       const target = resourceMap.get(relation.targetResource);
       if (!target || target.kind !== 'collection') {
         diagnostics.push({
@@ -826,7 +834,10 @@ function validateProjectRelations(resources) {
         continue;
       }
 
-      const sourceField = resource.fields?.[relation.sourceField] ?? {};
+      if (sourceFieldDiagnostic) {
+        continue;
+      }
+
       const targetValues = new Set((Array.isArray(target.seed) ? target.seed : [])
         .map((record) => record?.[relation.targetField])
         .filter((value) => value !== undefined && value !== null && value !== '')
@@ -860,6 +871,26 @@ function validateProjectRelations(resources) {
   }
 
   return diagnostics;
+}
+
+function relationSourceFieldDiagnostic(resource, relation, sourceField) {
+  const sourceFieldType = sourceField?.type ?? 'unknown';
+  if (RELATION_SCALAR_FIELD_TYPES.has(sourceFieldType)) {
+    return null;
+  }
+
+  return {
+    code: 'SCHEMA_RELATION_SOURCE_FIELD_INVALID',
+    severity: 'error',
+    resource: resource.name,
+    field: relation.sourceField,
+    message: `${resource.name} relation "${relation.name}" source field "${relation.sourceField}" must be a scalar field, but found ${sourceFieldType}.`,
+    hint: 'Use a scalar id field for to-one relation metadata, such as string, number, boolean, datetime, or enum.',
+    details: {
+      relation,
+      sourceFieldType,
+    },
+  };
 }
 
 function mergeInferredFields(fields, required) {

@@ -4,6 +4,7 @@ import { createJsonDbRequestHandler, createViewerEventHub, watchSourceDir } from
 import { sendJson } from './rest/handler.js';
 
 const DEFAULT_VIRTUAL_CLIENT_MODULE = 'virtual:jsondb/client';
+const DEFAULT_CLIENT_IMPORT = 'jsondb/client';
 
 export function jsondbPlugin(options = {}) {
   const routes = resolveViteRoutes(options);
@@ -13,7 +14,7 @@ export function jsondbPlugin(options = {}) {
   const resolvedVirtualModuleId = virtualModuleId ? `\0${virtualModuleId}` : null;
 
   return {
-    name: 'json-fixture-db:vite',
+    name: 'jsondb:vite',
     apply: 'serve',
 
     async configureServer(server) {
@@ -53,7 +54,7 @@ export function jsondbPlugin(options = {}) {
         return null;
       }
 
-      return renderVirtualClient(routes);
+      return renderVirtualClient(routes, options.clientImport ?? DEFAULT_CLIENT_IMPORT);
     },
   };
 }
@@ -68,8 +69,8 @@ function resolveViteRoutes(options) {
   };
 }
 
-function renderVirtualClient(routes) {
-  return `import { createJsonDbClient } from 'json-fixture-db/client';
+function renderVirtualClient(routes, clientImport) {
+  return `import { createJsonDbClient } from ${JSON.stringify(clientImport)};
 
 export const client = createJsonDbClient({
   restBasePath: ${JSON.stringify(routes.restBasePath)},
@@ -88,6 +89,7 @@ function jsondbOptions(options) {
     restBasePath,
     graphqlPath,
     clientVirtualModule,
+    clientImport,
     ...jsondb
   } = options;
   return jsondb;

@@ -81,6 +81,6 @@ async function importHono() {
   try {
     return await import('hono');
   } catch (error) {
-    throw new Error(`json-fixture-db/hono requires hono to be installed in your app: ${error.message}`);
+    throw new Error(`jsondb/hono requires hono to be installed in your app: ${error.message}`);
   }
 }

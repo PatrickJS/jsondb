@@ -161,6 +161,18 @@ async function expandRecords(db, records, query) {
   for (const relationName of query.expand) {
     const relation = query.relationMap.get(relationName);
     const targets = await db.collection(relation.targetResource).all();
+    const targetById = new Map();
+    for (const target of targets) {
+      const targetValue = target?.[relation.targetField];
+      if (targetValue === undefined || targetValue === null) {
+        continue;
+      }
+
+      const key = String(targetValue);
+      if (!targetById.has(key)) {
+        targetById.set(key, target);
+      }
+    }
 
     for (const record of nextRecords) {
       const value = record?.[relation.sourceField];
@@ -169,7 +181,7 @@ async function expandRecords(db, records, query) {
         continue;
       }
 
-      record[relation.name] = targets.find((target) => idMatches(target?.[relation.targetField], value)) ?? null;
+      record[relation.name] = targetById.get(String(value)) ?? null;
     }
   }
 
@@ -253,8 +265,4 @@ function parseLimit(value) {
   }
 
   return Number(value);
-}
-
-function idMatches(left, right) {
-  return left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 }

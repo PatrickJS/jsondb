@@ -265,7 +265,7 @@ export type JsonDbTypes = {
 Package usage:
 
 ```ts
-import { openJsonFixtureDb } from 'json-fixture-db';
+import { openJsonFixtureDb } from 'jsondb';
 import type { JsonDbTypes } from './generated/jsondb.types';
 
 const db = await openJsonFixtureDb<JsonDbTypes>({
@@ -309,7 +309,7 @@ db/users.schema.mjs
 ```
 
 ```js
-import { collection, field } from 'json-fixture-db/schema';
+import { collection, field } from 'jsondb/schema';
 
 export default collection({
   description: 'Users who can sign into the local test app.',
@@ -746,10 +746,10 @@ The upload should copy the CSV into the configured fixture folder, run sync, rel
 
 While serving, jsondb should watch the configured fixture folder for fixture and schema changes, ignoring `.jsondb/`. On change, reload resources and notify the single-file viewer through `/__jsondb/events` so the dashboard refreshes automatically. If one source file fails to parse or load, report a file-specific diagnostic in the viewer and keep the remaining valid resources available. If the runtime cannot create a file watcher because of environment resource limits such as `EMFILE` or `ENOSPC`, keep the HTTP server running, publish a warning diagnostic, and serve without live reload.
 
-Vite and Void development should be supported through a dependency-light plugin export:
+Vite development should be supported through a dependency-light plugin export:
 
 ```js
-import { jsondbPlugin } from 'json-fixture-db/vite';
+import { jsondbPlugin } from 'jsondb/vite';
 
 export default {
   plugins: [jsondbPlugin()],
@@ -839,7 +839,7 @@ examples/advanced
 Provide a small HTTP client for consuming jsondb from apps and tests:
 
 ```ts
-import { createJsonDbClient } from 'json-fixture-db/client';
+import { createJsonDbClient } from 'jsondb/client';
 
 const client = createJsonDbClient({
   baseUrl: 'http://127.0.0.1:7331',
@@ -1024,7 +1024,7 @@ A `.schema.jsonc` file can define a resource without seed data:
 Support `.schema.mjs` files for richer authoring:
 
 ```js
-import { collection, field } from 'json-fixture-db/schema';
+import { collection, field } from 'jsondb/schema';
 
 export default collection({
   description: 'Users who can sign into the local test app.',
@@ -1110,8 +1110,8 @@ Generation should fail on schema errors. For production SQLite output, warning d
 Keep Hono and SQLite runtime support isolated under optional exports:
 
 ```txt
-json-fixture-db/hono
-json-fixture-db/sqlite
+jsondb/hono
+jsondb/sqlite
 ```
 
 The core package must not add mandatory Hono or SQLite npm dependencies.

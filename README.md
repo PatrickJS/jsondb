@@ -602,7 +602,7 @@ The client can batch requests made within a short timeout. The default batching 
 
 ## Vite Dev Server Plugin
 
-Vite and Void apps can mount jsondb into the existing dev server instead of running `jsondb serve` on a second port:
+Vite apps can mount jsondb into the existing dev server instead of running `jsondb serve` on a second port:
 
 ```js
 import { defineConfig } from 'vite';
@@ -615,7 +615,7 @@ export default defineConfig({
 });
 ```
 
-The plugin is dev-only (`apply: 'serve'`). It does not run during `vite build` or `void deploy`, and it does not add a mandatory Vite or Void dependency to jsondb.
+The plugin is dev-only (`apply: 'serve'`). It does not run during `vite build`, and it does not add a mandatory Vite dependency to jsondb.
 
 By default, dev routes are scoped so they do not steal app URLs:
 
@@ -637,7 +637,7 @@ const users = await jsondb.rest.get('/users');
 const selected = await jsondb.rest.get('/users?select=id,name');
 ```
 
-Plugin options include `cwd`, `dbDir`, `stateDir`, `apiBase`, `restBasePath`, `graphqlPath`, `rootRoutes`, and `clientVirtualModule`. Set `rootRoutes: true` only when you intentionally want Vite dev to also answer unscoped routes like `/users`; standalone `jsondb serve` keeps those root REST routes by default.
+Plugin options include `cwd`, `dbDir`, `stateDir`, `apiBase`, `restBasePath`, `graphqlPath`, `rootRoutes`, `clientVirtualModule`, and `clientImport`. Set `rootRoutes: true` only when you intentionally want Vite dev to also answer unscoped routes like `/users`; standalone `jsondb serve` keeps those root REST routes by default.
 
 ## Type Generation
 

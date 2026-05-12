@@ -1,4 +1,4 @@
-import { collection, field } from 'json-fixture-db/schema';
+import { collection, field } from 'jsondb/schema';
 
 export default collection({
   description: 'Users who can sign into the local test app.',
