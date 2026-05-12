@@ -20,6 +20,22 @@ export type JsonDbGeneratedTypesOptions = {
   exportRuntimeHelpers?: boolean;
 };
 
+export type JsonDbSchemaManifestFieldContext = {
+  field: Record<string, unknown>;
+  fieldName: string;
+  resource: Record<string, unknown>;
+  resourceName: string;
+  path: string;
+  file: string | null;
+  sourceFile: string | null;
+  defaultManifest: Record<string, unknown>;
+};
+
+export type JsonDbSchemaManifestOptions = {
+  /** Customize or omit generated field manifest entries. Return null to omit a field. */
+  customizeField?: (context: JsonDbSchemaManifestFieldContext) => Record<string, unknown> | null;
+};
+
 export type JsonDbOptions = {
   /** Project root used to resolve relative config paths. Defaults to process.cwd(). */
   cwd?: string;
@@ -31,6 +47,10 @@ export type JsonDbOptions = {
   sourceDir?: string;
   /** Generated runtime output folder. Defaults to "./.jsondb". */
   stateDir?: string;
+  /** Optional committed generated JSON schema manifest for admin/CMS UI generation. */
+  schemaOutFile?: string | null;
+  /** Optional visitor hooks for customizing generated schema manifest output. */
+  schemaManifest?: JsonDbSchemaManifestOptions;
   /** "mirror" keeps source fixtures unchanged; "source" may write generated ids back to plain .json fixtures. */
   mode?: 'mirror' | 'source';
   /** Run sync automatically when opening the package API. */
@@ -261,6 +281,8 @@ export function runJsonDbDoctor(config: JsonDbOptions): Promise<JsonDbDoctorResu
 export function startJsonDbServer(options?: JsonDbOptions & { host?: string; port?: number }): Promise<JsonDbServer>;
 export function syncJsonFixtureDb(config: JsonDbOptions, options?: { allowErrors?: boolean }): Promise<unknown>;
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
+export function generateSchemaManifest(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ manifest: unknown; content: string; outFiles: string[] }>;
+export function renderSchemaManifest(resources: unknown[], config?: JsonDbOptions): unknown;
 export function generateHonoStarter(
   config: JsonDbOptions,
   options?: {

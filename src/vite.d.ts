@@ -5,7 +5,7 @@ export type JsonDbVirtualClient = JsonDbClient & {
   fork(name: string): JsonDbClient;
 };
 
-export type JsonDbVitePluginOptions = Pick<JsonDbOptions, 'cwd' | 'configPath' | 'dbDir' | 'sourceDir' | 'stateDir' | 'mode' | 'types' | 'schema' | 'defaults' | 'seed' | 'collections' | 'server' | 'rest' | 'graphql' | 'mock' | 'forks'> & {
+export type JsonDbVitePluginOptions = Pick<JsonDbOptions, 'cwd' | 'configPath' | 'dbDir' | 'sourceDir' | 'stateDir' | 'schemaOutFile' | 'schemaManifest' | 'mode' | 'types' | 'schema' | 'defaults' | 'seed' | 'collections' | 'server' | 'rest' | 'graphql' | 'mock' | 'forks'> & {
   /** Scoped base for jsondb dev tools. Defaults to "/__jsondb". */
   apiBase?: string;
   /** Serve root REST routes such as "/users" during Vite dev. Defaults to false. */

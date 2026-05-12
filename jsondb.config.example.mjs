@@ -8,6 +8,17 @@ export default defineConfig({
   // Runtime output folder. Defaults to './.jsondb'.
   stateDir: './.jsondb',
 
+  // Optional committed JSON schema manifest for model-driven admin/CMS UIs.
+  // Generated during `jsondb sync` when set.
+  schemaOutFile: null,
+
+  // Optional visitor hook for changing or omitting generated manifest fields.
+  schemaManifest: {
+    customizeField({ defaultManifest }) {
+      return defaultManifest;
+    },
+  },
+
   // mirror: keep source fixtures unchanged and write app edits to .jsondb/state.
   // source: write generated ids back to plain .json fixtures when needed.
   mode: 'mirror',

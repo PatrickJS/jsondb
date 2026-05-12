@@ -6,6 +6,7 @@ import { runJsonDbDoctor } from './doctor.js';
 import { openJsonFixtureDb } from './db.js';
 import { generateHonoStarter } from './generate/hono.js';
 import { loadProjectSchema } from './schema.js';
+import { generateSchemaManifest } from './schema-manifest.js';
 import { startJsonDbServer } from './server.js';
 import { syncJsonFixtureDb } from './sync.js';
 import { generateTypes } from './types.js';
@@ -108,6 +109,23 @@ async function runTypesOnce(config, args) {
 
 async function runSchema(config, args) {
   const project = await loadProjectSchema(config);
+
+  if (args[0] === 'manifest') {
+    const result = await generateSchemaManifest(config, {
+      project,
+      outFile: valueAfter(args, '--out'),
+    });
+
+    if (result.outFiles.length === 0) {
+      console.log(result.content);
+      return;
+    }
+
+    for (const filePath of result.outFiles) {
+      console.log(`Generated ${path.relative(config.cwd, filePath)}`);
+    }
+    return;
+  }
 
   if (args[0] === 'validate') {
     for (const diagnostic of project.diagnostics) {
@@ -240,6 +258,7 @@ Usage:
   jsondb sync
   jsondb types [--watch] [--out <file>]
   jsondb schema [resource]
+  jsondb schema manifest [--out <file>]
   jsondb schema validate
   jsondb doctor [--strict] [--json]
   jsondb check [--strict] [--json]
