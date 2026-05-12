@@ -789,6 +789,10 @@ queries
 mutations
 root and nested aliases
 variables
+operationName selection for multi-operation documents
+__typename meta fields
+named fragments and inline fragments
+@include and @skip executable directives
 object/list/scalar input values
 collection list queries
 collection single-record queries by id
@@ -796,16 +800,15 @@ collection create/update/delete mutations
 singleton document queries
 singleton document update/set mutations
 selection-set projection
+minimal __schema and __type introspection
 HTTP batching by posting an array to /graphql
 ```
 
 Unsupported in the dependency-free v1 subset:
 
 ```txt
-fragments
-directives
 subscriptions
-full introspection
+full spec introspection coverage
 general-purpose GraphQL validation
 ```
 

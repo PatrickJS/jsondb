@@ -12,8 +12,47 @@ class Parser {
   }
 
   parseDocument() {
+    const operations = [];
+    const fragments = {};
+
+    while (!this.peekValue('<eof>')) {
+      if (this.peekName('fragment')) {
+        const fragment = this.parseFragmentDefinition();
+        fragments[fragment.name] = fragment;
+      } else {
+        operations.push(this.parseOperationDefinition());
+      }
+    }
+
+    const firstOperation = operations[0] ?? {
+      operation: 'query',
+      name: null,
+      selectionSet: [],
+    };
+
+    return {
+      kind: 'document',
+      operation: firstOperation.operation,
+      name: firstOperation.name,
+      selectionSet: firstOperation.selectionSet,
+      operations,
+      fragments,
+    };
+  }
+
+  parseOperationDefinition() {
     let operation = 'query';
     let name = null;
+
+    if (this.peekValue('{')) {
+      return {
+        kind: 'operation',
+        operation,
+        name,
+        directives: [],
+        selectionSet: this.parseSelectionSet(),
+      };
+    }
 
     if (this.peekName('query') || this.peekName('mutation')) {
       operation = this.consume().value;
@@ -32,12 +71,40 @@ class Parser {
           hint: 'Use query or mutation operations. jsondb is a local fixture server and does not keep long-lived subscription streams.',
         },
       );
+    } else {
+      throw jsonDbError(
+        'GRAPHQL_PARSE_EXPECTED_OPERATION',
+        `Expected GraphQL operation or fragment but found "${this.peek().value}".`,
+        {
+          hint: 'Start the document with "{", "query", "mutation", or "fragment".',
+          details: { found: this.peek().value },
+        },
+      );
     }
 
+    const directives = this.parseDirectives();
+
     return {
-      kind: 'document',
+      kind: 'operation',
       operation,
       name,
+      directives,
+      selectionSet: this.parseSelectionSet(),
+    };
+  }
+
+  parseFragmentDefinition() {
+    this.expectNameValue('fragment');
+    const name = this.expectName();
+    this.expectNameValue('on');
+    const typeCondition = this.expectName();
+    const directives = this.parseDirectives();
+
+    return {
+      kind: 'fragment_definition',
+      name,
+      typeCondition,
+      directives,
       selectionSet: this.parseSelectionSet(),
     };
   }
@@ -47,11 +114,43 @@ class Parser {
     const selections = [];
 
     while (!this.peekValue('}')) {
-      selections.push(this.parseField());
+      selections.push(this.parseSelection());
     }
 
     this.expect('}');
     return selections;
+  }
+
+  parseSelection() {
+    if (this.peekValue('...')) {
+      return this.parseFragmentSelection();
+    }
+
+    return this.parseField();
+  }
+
+  parseFragmentSelection() {
+    this.expect('...');
+
+    if (this.peekName('on')) {
+      this.consume();
+      const typeCondition = this.expectName();
+      const directives = this.parseDirectives();
+      return {
+        kind: 'inline_fragment',
+        typeCondition,
+        directives,
+        selectionSet: this.parseSelectionSet(),
+      };
+    }
+
+    const name = this.expectName();
+    const directives = this.parseDirectives();
+    return {
+      kind: 'fragment_spread',
+      name,
+      directives,
+    };
   }
 
   parseField() {
@@ -66,6 +165,7 @@ class Parser {
     }
 
     const args = this.peekValue('(') ? this.parseArguments() : {};
+    const directives = this.parseDirectives();
     const selectionSet = this.peekValue('{') ? this.parseSelectionSet() : null;
 
     return {
@@ -73,8 +173,25 @@ class Parser {
       alias,
       name,
       arguments: args,
+      directives,
       selectionSet,
     };
+  }
+
+  parseDirectives() {
+    const directives = [];
+
+    while (this.peekValue('@')) {
+      this.consume();
+      const name = this.expectName();
+      directives.push({
+        kind: 'directive',
+        name,
+        arguments: this.peekValue('(') ? this.parseArguments() : {},
+      });
+    }
+
+    return directives;
   }
 
   parseArguments() {
@@ -239,6 +356,21 @@ class Parser {
     return token.value;
   }
 
+  expectNameValue(value) {
+    const name = this.expectName();
+    if (name !== value) {
+      throw jsonDbError(
+        'GRAPHQL_PARSE_EXPECTED_NAME_VALUE',
+        `Expected GraphQL name "${value}" but found "${name}".`,
+        {
+          hint: `Use "${value}" in this part of the GraphQL document.`,
+          details: { expected: value, found: name },
+        },
+      );
+    }
+    return name;
+  }
+
   peekName(name) {
     const token = this.peek();
     return token.type === 'name' && token.value === name;
@@ -278,7 +410,13 @@ function tokenize(source) {
       continue;
     }
 
-    if ('{}():[]!$='.includes(char)) {
+    if (source.startsWith('...', index)) {
+      tokens.push({ type: 'punctuation', value: '...' });
+      index += 3;
+      continue;
+    }
+
+    if ('{}():[]!$=@'.includes(char)) {
       tokens.push({ type: 'punctuation', value: char });
       index += 1;
       continue;

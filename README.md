@@ -500,7 +500,7 @@ curl 'http://127.0.0.1:7331/posts/p_1?expand=author&select=id,title,author.name'
 
 `select` supports top-level fields and one nested expanded relation field. Relation expansion is depth 1 in this MVP, and reverse to-many expansion is intentionally deferred.
 
-jsondb also exposes a dependency-free GraphQL subset at `/graphql` for apps that prefer GraphQL. This README stays REST-first because REST plus the data viewer is the intended default path.
+jsondb also exposes a dependency-free GraphQL subset at `/graphql` for apps that prefer GraphQL. It supports aliases, variables, `operationName`, `__typename`, named and inline fragments, `@include`/`@skip`, HTTP batching, and minimal `__schema`/`__type` introspection for local tooling. This README stays REST-first because REST plus the data viewer is the intended default path.
 
 ### REST Batching
 

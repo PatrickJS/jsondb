@@ -24,6 +24,7 @@ async function executeGraphqlSingle(db, request) {
   try {
     const query = typeof request === 'string' ? request : request.query;
     const variables = typeof request === 'string' ? {} : request.variables ?? {};
+    const operationName = typeof request === 'string' ? null : request.operationName ?? null;
 
     if (!query || typeof query !== 'string') {
       throw jsonDbError(
@@ -37,7 +38,11 @@ async function executeGraphqlSingle(db, request) {
     }
 
     const document = parseGraphql(query);
-    const data = await executeSelectionSet(db, document.operation, document.selectionSet, variables);
+    const operation = selectOperation(document, operationName);
+    const data = await executeSelectionSet(db, operation.operation, operation.selectionSet, variables, {
+      fragments: document.fragments ?? {},
+      typeName: operation.operation === 'mutation' ? 'Mutation' : 'Query',
+    });
     return { data };
   } catch (error) {
     return {
@@ -49,21 +54,108 @@ async function executeGraphqlSingle(db, request) {
   }
 }
 
-async function executeSelectionSet(db, operation, selections, variables) {
+function selectOperation(document, operationName) {
+  const operations = document.operations?.length ? document.operations : [document];
+
+  if (operationName) {
+    const operation = operations.find((candidate) => candidate.name === operationName);
+    if (!operation) {
+      throw jsonDbError(
+        'GRAPHQL_UNKNOWN_OPERATION',
+        `Unknown GraphQL operation "${operationName}".`,
+        {
+          hint: `Use one of: ${listChoices(operations.map((operation) => operation.name).filter(Boolean))}.`,
+          details: {
+            operationName,
+            availableOperations: operations.map((operation) => operation.name).filter(Boolean),
+          },
+        },
+      );
+    }
+    return operation;
+  }
+
+  if (operations.length === 1) {
+    return operations[0];
+  }
+
+  throw jsonDbError(
+    'GRAPHQL_OPERATION_NAME_REQUIRED',
+    'GraphQL operationName is required when a document contains multiple operations.',
+    {
+      hint: `Pass operationName with one of: ${listChoices(operations.map((operation) => operation.name).filter(Boolean))}.`,
+      details: {
+        availableOperations: operations.map((operation) => operation.name).filter(Boolean),
+      },
+    },
+  );
+}
+
+async function executeSelectionSet(db, operation, selections, variables, context) {
   const data = {};
 
   for (const selection of selections) {
-    const key = responseKey(selection);
-    const value = operation === 'mutation'
-      ? await executeMutationField(db, selection, variables)
-      : await executeQueryField(db, selection, variables);
-    data[key] = projectValue(value, selection.selectionSet);
+    await executeRootSelection(db, operation, selection, variables, context, data);
   }
 
   return data;
 }
 
+async function executeRootSelection(db, operation, selection, variables, context, data) {
+  if (!shouldIncludeSelection(selection, variables)) {
+    return;
+  }
+
+  if (selection.kind === 'fragment_spread') {
+    const fragment = requireFragment(context.fragments, selection.name);
+    if (typeConditionApplies(fragment.typeCondition, context.typeName) && shouldIncludeSelection(fragment, variables)) {
+      for (const fragmentSelection of fragment.selectionSet) {
+        await executeRootSelection(db, operation, fragmentSelection, variables, context, data);
+      }
+    }
+    return;
+  }
+
+  if (selection.kind === 'inline_fragment') {
+    if (typeConditionApplies(selection.typeCondition, context.typeName)) {
+      for (const fragmentSelection of selection.selectionSet) {
+        await executeRootSelection(db, operation, fragmentSelection, variables, context, data);
+      }
+    }
+    return;
+  }
+
+  const key = responseKey(selection);
+  if (selection.name === '__typename') {
+    data[key] = context.typeName;
+    return;
+  }
+
+  const result = operation === 'mutation'
+    ? await executeMutationField(db, selection, variables)
+    : await executeQueryField(db, selection, variables);
+  data[key] = projectValue(result.value, selection.selectionSet, {
+    ...context,
+    variables,
+    typeName: result.typeName,
+  });
+}
+
 async function executeQueryField(db, selection, variables) {
+  if (selection.name === '__schema') {
+    return {
+      value: introspectionSchema(db),
+      typeName: '__Schema',
+    };
+  }
+
+  if (selection.name === '__type') {
+    return {
+      value: introspectionType(db, readArgument(selection, 'name', variables)),
+      typeName: '__Type',
+    };
+  }
+
   const resource = findQueryResource(db, selection.name);
   if (!resource) {
     throw jsonDbError(
@@ -80,11 +172,17 @@ async function executeQueryField(db, selection, variables) {
   }
 
   if (resource.kind === 'document') {
-    return db.document(resource.name).all();
+    return {
+      value: await db.document(resource.name).all(),
+      typeName: resource.typeName,
+    };
   }
 
   if (selection.name === collectionRootName(resource)) {
-    return db.collection(resource.name).all();
+    return {
+      value: await db.collection(resource.name).all(),
+      typeName: resource.typeName,
+    };
   }
 
   const id = readArgument(selection, 'id', variables);
@@ -99,7 +197,10 @@ async function executeQueryField(db, selection, variables) {
     );
   }
 
-  return db.collection(resource.name).get(id);
+  return {
+    value: await db.collection(resource.name).get(id),
+    typeName: resource.typeName,
+  };
 }
 
 async function executeMutationField(db, selection, variables) {
@@ -119,10 +220,16 @@ async function executeMutationField(db, selection, variables) {
   }
 
   if (mutation.resource.kind === 'collection') {
-    return executeCollectionMutation(db, mutation, selection, variables);
+    return {
+      value: await executeCollectionMutation(db, mutation, selection, variables),
+      typeName: mutation.action === 'delete' ? 'Boolean' : mutation.resource.typeName,
+    };
   }
 
-  return executeDocumentMutation(db, mutation, selection, variables);
+  return {
+    value: await executeDocumentMutation(db, mutation, selection, variables),
+    typeName: mutation.resource.typeName,
+  };
 }
 
 async function executeCollectionMutation(db, mutation, selection, variables) {
@@ -203,13 +310,13 @@ function mutationActions(resource) {
     : ['update', 'set'];
 }
 
-function projectValue(value, selectionSet) {
+function projectValue(value, selectionSet, context = {}) {
   if (!selectionSet || value === null || value === undefined) {
     return value;
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => projectValue(item, selectionSet));
+    return value.map((item) => projectValue(item, selectionSet, context));
   }
 
   if (!isObject(value)) {
@@ -218,10 +325,133 @@ function projectValue(value, selectionSet) {
 
   const projected = {};
   for (const selection of selectionSet) {
-    projected[responseKey(selection)] = projectValue(value[selection.name], selection.selectionSet);
+    projectObjectSelection(value, selection, projected, context);
   }
 
   return projected;
+}
+
+function projectObjectSelection(value, selection, projected, context) {
+  if (!shouldIncludeSelection(selection, context.variables ?? {})) {
+    return;
+  }
+
+  if (selection.kind === 'fragment_spread') {
+    const fragment = requireFragment(context.fragments ?? {}, selection.name);
+    if (typeConditionApplies(fragment.typeCondition, context.typeName) && shouldIncludeSelection(fragment, context.variables ?? {})) {
+      for (const fragmentSelection of fragment.selectionSet) {
+        projectObjectSelection(value, fragmentSelection, projected, context);
+      }
+    }
+    return;
+  }
+
+  if (selection.kind === 'inline_fragment') {
+    if (typeConditionApplies(selection.typeCondition, context.typeName)) {
+      for (const fragmentSelection of selection.selectionSet) {
+        projectObjectSelection(value, fragmentSelection, projected, context);
+      }
+    }
+    return;
+  }
+
+  const key = responseKey(selection);
+  if (selection.name === '__typename') {
+    projected[key] = context.typeName ?? 'JSON';
+    return;
+  }
+
+  projected[key] = projectValue(value[selection.name], selection.selectionSet, {
+    ...context,
+    typeName: null,
+  });
+}
+
+function shouldIncludeSelection(selection, variables) {
+  for (const directive of selection.directives ?? []) {
+    const condition = directiveCondition(directive, variables);
+
+    if (directive.name === 'skip') {
+      if (condition === true) {
+        return false;
+      }
+      continue;
+    }
+
+    if (directive.name === 'include') {
+      if (condition === false) {
+        return false;
+      }
+      continue;
+    }
+
+    throw jsonDbError(
+      'GRAPHQL_UNSUPPORTED_DIRECTIVE',
+      `Unsupported GraphQL directive "@${directive.name}".`,
+      {
+        hint: 'jsondb supports @include(if: Boolean) and @skip(if: Boolean) executable directives.',
+        details: {
+          directive: directive.name,
+        },
+      },
+    );
+  }
+
+  return true;
+}
+
+function directiveCondition(directive, variables) {
+  if (!('if' in directive.arguments)) {
+    throw jsonDbError(
+      'GRAPHQL_DIRECTIVE_MISSING_IF',
+      `GraphQL directive "@${directive.name}" requires argument "if".`,
+      {
+        hint: `Use @${directive.name}(if: true) or pass a Boolean variable.`,
+        details: {
+          directive: directive.name,
+        },
+      },
+    );
+  }
+
+  const value = evaluateValue(directive.arguments.if, variables);
+  if (typeof value !== 'boolean') {
+    throw jsonDbError(
+      'GRAPHQL_DIRECTIVE_INVALID_IF',
+      `GraphQL directive "@${directive.name}" requires Boolean argument "if", but received ${describeValue(value)}.`,
+      {
+        hint: `Pass true, false, or a Boolean variable to @${directive.name}(if: ...).`,
+        details: {
+          directive: directive.name,
+          received: describeValue(value),
+        },
+      },
+    );
+  }
+
+  return value;
+}
+
+function requireFragment(fragments, name) {
+  const fragment = fragments[name];
+  if (!fragment) {
+    throw jsonDbError(
+      'GRAPHQL_UNKNOWN_FRAGMENT',
+      `Unknown GraphQL fragment "${name}".`,
+      {
+        hint: `Define fragment ${name} on TypeName { ... } in the same GraphQL document.`,
+        details: {
+          fragment: name,
+          availableFragments: Object.keys(fragments),
+        },
+      },
+    );
+  }
+  return fragment;
+}
+
+function typeConditionApplies(typeCondition, typeName) {
+  return !typeCondition || !typeName || typeCondition === typeName;
 }
 
 function readArgument(selection, name, variables) {
@@ -291,6 +521,262 @@ function argumentTypeError(field, argument, expected, actual) {
       },
     },
   );
+}
+
+function introspectionSchema(db) {
+  return {
+    queryType: namedIntrospectionType('Query'),
+    mutationType: namedIntrospectionType('Mutation'),
+    subscriptionType: null,
+    types: introspectionTypes(db),
+    directives: [
+      {
+        name: 'include',
+        description: 'Includes this field or fragment only when the if argument is true.',
+        locations: ['FIELD', 'FRAGMENT_SPREAD', 'INLINE_FRAGMENT'],
+        args: [
+          {
+            name: 'if',
+            description: null,
+            type: nonNullType(scalarType('Boolean')),
+            defaultValue: null,
+          },
+        ],
+      },
+      {
+        name: 'skip',
+        description: 'Skips this field or fragment when the if argument is true.',
+        locations: ['FIELD', 'FRAGMENT_SPREAD', 'INLINE_FRAGMENT'],
+        args: [
+          {
+            name: 'if',
+            description: null,
+            type: nonNullType(scalarType('Boolean')),
+            defaultValue: null,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function introspectionType(db, name) {
+  if (!name) {
+    return null;
+  }
+
+  return introspectionTypes(db).find((type) => type.name === name) ?? null;
+}
+
+function introspectionTypes(db) {
+  const resources = [...db.resources.values()];
+  return [
+    rootOperationType('Query', queryIntrospectionFields(db)),
+    rootOperationType('Mutation', mutationIntrospectionFields(db)),
+    scalarIntrospectionType('ID'),
+    scalarIntrospectionType('String'),
+    scalarIntrospectionType('Float'),
+    scalarIntrospectionType('Boolean'),
+    scalarIntrospectionType('JSON'),
+    ...resources.map(resourceIntrospectionType),
+    rootOperationType('__Schema', [
+      fieldIntrospection('queryType', namedIntrospectionType('__Type')),
+      fieldIntrospection('mutationType', namedIntrospectionType('__Type')),
+      fieldIntrospection('subscriptionType', namedIntrospectionType('__Type')),
+      fieldIntrospection('types', listType(namedIntrospectionType('__Type'))),
+      fieldIntrospection('directives', listType(namedIntrospectionType('__Directive'))),
+    ]),
+    rootOperationType('__Type', [
+      fieldIntrospection('kind', scalarType('String')),
+      fieldIntrospection('name', scalarType('String')),
+      fieldIntrospection('description', scalarType('String')),
+      fieldIntrospection('fields', listType(namedIntrospectionType('__Field'))),
+      fieldIntrospection('inputFields', listType(namedIntrospectionType('__InputValue'))),
+      fieldIntrospection('interfaces', listType(namedIntrospectionType('__Type'))),
+      fieldIntrospection('enumValues', listType(namedIntrospectionType('__EnumValue'))),
+      fieldIntrospection('possibleTypes', listType(namedIntrospectionType('__Type'))),
+      fieldIntrospection('ofType', namedIntrospectionType('__Type')),
+    ]),
+    rootOperationType('__Field', [
+      fieldIntrospection('name', scalarType('String')),
+      fieldIntrospection('description', scalarType('String')),
+      fieldIntrospection('args', listType(namedIntrospectionType('__InputValue'))),
+      fieldIntrospection('type', namedIntrospectionType('__Type')),
+      fieldIntrospection('isDeprecated', scalarType('Boolean')),
+      fieldIntrospection('deprecationReason', scalarType('String')),
+    ]),
+    rootOperationType('__InputValue', [
+      fieldIntrospection('name', scalarType('String')),
+      fieldIntrospection('description', scalarType('String')),
+      fieldIntrospection('type', namedIntrospectionType('__Type')),
+      fieldIntrospection('defaultValue', scalarType('String')),
+    ]),
+    rootOperationType('__EnumValue', [
+      fieldIntrospection('name', scalarType('String')),
+      fieldIntrospection('description', scalarType('String')),
+      fieldIntrospection('isDeprecated', scalarType('Boolean')),
+      fieldIntrospection('deprecationReason', scalarType('String')),
+    ]),
+    rootOperationType('__Directive', [
+      fieldIntrospection('name', scalarType('String')),
+      fieldIntrospection('description', scalarType('String')),
+      fieldIntrospection('locations', listType(scalarType('String'))),
+      fieldIntrospection('args', listType(namedIntrospectionType('__InputValue'))),
+    ]),
+  ];
+}
+
+function resourceIntrospectionType(resource) {
+  return {
+    kind: 'OBJECT',
+    name: resource.typeName,
+    description: resource.description ?? null,
+    fields: Object.entries(resource.fields ?? {}).map(([fieldName, field]) => ({
+      name: fieldName,
+      description: field.description ?? null,
+      args: [],
+      type: introspectionFieldType(field, fieldName === resource.idField),
+      isDeprecated: false,
+      deprecationReason: null,
+    })),
+    inputFields: null,
+    interfaces: [],
+    enumValues: null,
+    possibleTypes: null,
+  };
+}
+
+function rootOperationType(name, fields) {
+  return {
+    kind: 'OBJECT',
+    name,
+    description: null,
+    fields,
+    inputFields: null,
+    interfaces: [],
+    enumValues: null,
+    possibleTypes: null,
+  };
+}
+
+function scalarIntrospectionType(name) {
+  return {
+    kind: 'SCALAR',
+    name,
+    description: null,
+    fields: null,
+    inputFields: null,
+    interfaces: null,
+    enumValues: null,
+    possibleTypes: null,
+  };
+}
+
+function queryIntrospectionFields(db) {
+  return [
+    fieldIntrospection('__schema', namedIntrospectionType('__Schema')),
+    fieldIntrospection('__type', namedIntrospectionType('__Type'), [
+      {
+        name: 'name',
+        description: null,
+        type: nonNullType(scalarType('String')),
+        defaultValue: null,
+      },
+    ]),
+    ...[...db.resources.values()].flatMap((resource) => {
+      if (resource.kind === 'document') {
+        return [fieldIntrospection(resource.name, namedIntrospectionType(resource.typeName))];
+      }
+
+      return [
+        fieldIntrospection(collectionRootName(resource), listType(namedIntrospectionType(resource.typeName))),
+        fieldIntrospection(singleRootName(resource), namedIntrospectionType(resource.typeName), [
+          {
+            name: 'id',
+            description: null,
+            type: nonNullType(scalarType('ID')),
+            defaultValue: null,
+          },
+        ]),
+      ];
+    }),
+  ];
+}
+
+function mutationIntrospectionFields(db) {
+  return [...db.resources.values()].flatMap((resource) => mutationActions(resource).map((action) => {
+    const type = action === 'delete' ? scalarType('Boolean') : namedIntrospectionType(resource.typeName);
+    return fieldIntrospection(`${action}${resource.typeName}`, type);
+  }));
+}
+
+function fieldIntrospection(name, type, args = []) {
+  return {
+    name,
+    description: null,
+    args,
+    type,
+    isDeprecated: false,
+    deprecationReason: null,
+  };
+}
+
+function introspectionFieldType(field, isIdField = false) {
+  const base = isIdField ? scalarType('ID') : scalarType(scalarNameForField(field));
+  const type = field.type === 'array'
+    ? listType(base)
+    : base;
+  return field.required ? nonNullType(type) : type;
+}
+
+function scalarNameForField(field) {
+  switch (field.type) {
+    case 'number':
+      return 'Float';
+    case 'boolean':
+      return 'Boolean';
+    case 'string':
+    case 'datetime':
+    case 'enum':
+      return 'String';
+    case 'array':
+    case 'object':
+    case 'unknown':
+    default:
+      return 'JSON';
+  }
+}
+
+function scalarType(name) {
+  return {
+    kind: 'SCALAR',
+    name,
+    ofType: null,
+  };
+}
+
+function namedIntrospectionType(name) {
+  return {
+    kind: 'OBJECT',
+    name,
+    ofType: null,
+  };
+}
+
+function listType(ofType) {
+  return {
+    kind: 'LIST',
+    name: null,
+    ofType,
+  };
+}
+
+function nonNullType(ofType) {
+  return {
+    kind: 'NON_NULL',
+    name: null,
+    ofType,
+  };
 }
 
 function availableQueryFields(db) {

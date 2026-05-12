@@ -109,6 +109,188 @@ test('dependency-free GraphQL supports repeated root fields with aliases in one 
   });
 });
 
+test('GraphQL supports operationName fragments and __typename for Apollo clients', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true },
+      "email": { "type": "string", "required": true }
+    },
+    "seed": [
+      { "id": "u_1", "name": "Ada Lovelace", "email": "ada@example.com" }
+    ]
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: `
+      query ListUsers {
+        users {
+          ...UserFields
+        }
+      }
+
+      query GetUser($id: ID!) {
+        __typename
+        user(id: $id) {
+          __typename
+          ...UserFields
+        }
+      }
+
+      fragment UserFields on User {
+        id
+        displayName: name
+      }
+    `,
+    operationName: 'GetUser',
+    variables: {
+      id: 'u_1',
+    },
+  });
+
+  assert.deepEqual(result, {
+    data: {
+      __typename: 'Query',
+      user: {
+        __typename: 'User',
+        id: 'u_1',
+        displayName: 'Ada Lovelace',
+      },
+    },
+  });
+});
+
+test('GraphQL supports include and skip directives on fields and fragments', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: `
+      query GetUser($id: ID!, $withEmail: Boolean!, $hideName: Boolean!) {
+        user(id: $id) {
+          id
+          name @skip(if: $hideName)
+          email @include(if: $withEmail)
+          ...ExtraFields @include(if: $withEmail)
+        }
+      }
+
+      fragment ExtraFields on User {
+        typeName: __typename
+      }
+    `,
+    variables: {
+      id: 'u_1',
+      withEmail: true,
+      hideName: true,
+    },
+  });
+
+  assert.deepEqual(result, {
+    data: {
+      user: {
+        id: 'u_1',
+        email: 'ada@example.com',
+        typeName: 'User',
+      },
+    },
+  });
+});
+
+test('GraphQL exposes minimal schema and type introspection', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true },
+      "active": { "type": "boolean" }
+    },
+    "seed": []
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const result = await executeGraphql(db, {
+    query: `{
+      __schema {
+        queryType { name }
+        mutationType { name }
+        types {
+          name
+          kind
+        }
+      }
+      __type(name: "User") {
+        name
+        kind
+        fields {
+          name
+          type {
+            kind
+            name
+            ofType {
+              kind
+              name
+            }
+          }
+        }
+      }
+    }`,
+  });
+
+  assert.equal(result.data.__schema.queryType.name, 'Query');
+  assert.equal(result.data.__schema.mutationType.name, 'Mutation');
+  assert.ok(result.data.__schema.types.some((type) => type.name === 'User' && type.kind === 'OBJECT'));
+  assert.deepEqual(result.data.__type, {
+    name: 'User',
+    kind: 'OBJECT',
+    fields: [
+      {
+        name: 'id',
+        type: {
+          kind: 'NON_NULL',
+          name: null,
+          ofType: {
+            kind: 'SCALAR',
+            name: 'ID',
+          },
+        },
+      },
+      {
+        name: 'name',
+        type: {
+          kind: 'NON_NULL',
+          name: null,
+          ofType: {
+            kind: 'SCALAR',
+            name: 'String',
+          },
+        },
+      },
+      {
+        name: 'active',
+        type: {
+          kind: 'SCALAR',
+          name: 'Boolean',
+          ofType: null,
+        },
+      },
+    ],
+  });
+});
+
 test('dependency-free GraphQL collection mutations create update and delete records', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.jsonc', `{
