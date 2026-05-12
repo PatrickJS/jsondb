@@ -159,6 +159,7 @@ export type RestBatchResult = {
 
 export type JsonDbClientOptions = {
   baseUrl?: string;
+  restBasePath?: string;
   graphqlPath?: string;
   restBatchPath?: string;
   batching?: boolean | {
@@ -190,9 +191,32 @@ export type JsonDbClient = {
   };
 };
 
+export type JsonDbDoctorSeverity = 'error' | 'warn' | 'info';
+
+export type JsonDbDoctorFinding = {
+  code: string;
+  severity: JsonDbDoctorSeverity;
+  source?: 'schema' | 'doctor' | string;
+  resource?: string;
+  field?: string;
+  message: string;
+  hint?: string;
+  details?: Record<string, unknown>;
+};
+
+export type JsonDbDoctorResult = {
+  summary: {
+    error: number;
+    warn: number;
+    info: number;
+  };
+  findings: JsonDbDoctorFinding[];
+};
+
 export function openJsonFixtureDb<Types extends JsonDbTypeMap = JsonDbTypeMap>(options?: JsonDbOptions): Promise<JsonFixtureDb<Types>>;
 export function createJsonDbClient(options?: JsonDbClientOptions): JsonDbClient;
 export function loadConfig(options?: JsonDbOptions): Promise<JsonDbOptions>;
+export function runJsonDbDoctor(config: JsonDbOptions): Promise<JsonDbDoctorResult>;
 export function syncJsonFixtureDb(config: JsonDbOptions, options?: { allowErrors?: boolean }): Promise<unknown>;
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
 export function generateHonoStarter(

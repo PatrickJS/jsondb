@@ -1,6 +1,7 @@
 export { loadConfig } from './config.js';
 export { createJsonDbClient } from './client.js';
 export { openJsonFixtureDb, JsonFixtureDb, JsonDbCollection, JsonDbDocument } from './db.js';
+export { runJsonDbDoctor } from './doctor.js';
 export { executeGraphql, executeGraphqlBatch, parseGraphql } from './graphql/index.js';
 export { generateHonoStarter, renderHonoStarter } from './generate/hono.js';
 export { loadProjectSchema, makeGeneratedSchema } from './schema.js';

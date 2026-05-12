@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import { openJsonFixtureDb } from './db.js';
 import { makeProject, writeFixture } from '../test/helpers.js';
-import { reloadJsonFixtureDb, watchSourceDir } from './server.js';
+import { createJsonDbRequestHandler, reloadJsonFixtureDb, watchSourceDir } from './server.js';
 
 test('server reload path keeps valid resources when another source file fails', async () => {
   const cwd = await makeProject();
@@ -90,3 +90,111 @@ test('server source watch handles watcher error events without crashing', async 
   assert.match(warnings[0], /disabled.*file watchers/i);
   watcher.close();
 });
+
+test('request handler supports scoped Vite routes without root REST routes', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const handler = createJsonDbRequestHandler(db, {
+    apiBase: '/__jsondb',
+    rootRoutes: false,
+    graphqlPath: '/__jsondb/graphql',
+    restBasePath: '/__jsondb/rest',
+  });
+
+  const users = makeResponse();
+  const schema = makeResponse();
+  const batch = makeResponse();
+  const graphql = makeResponse();
+  const rootUsers = makeResponse();
+  let passedThrough = false;
+
+  assert.equal(await handler(makeRequest('GET', '/__jsondb/rest/users'), users), true);
+  assert.equal(await handler(makeRequest('GET', '/__jsondb/schema'), schema), true);
+  assert.equal(await handler(makeRequest('POST', '/__jsondb/batch', [
+    { method: 'GET', path: '/users' },
+  ]), batch), true);
+  assert.equal(await handler(makeRequest('POST', '/__jsondb/graphql', {
+    query: '{ users { id } }',
+  }), graphql), true);
+  assert.equal(await handler(makeRequest('GET', '/users'), rootUsers, () => {
+    passedThrough = true;
+  }), false);
+
+  assert.equal(users.status, 200);
+  assert.deepEqual(users.json(), [{ id: 'u_1', name: 'Ada' }]);
+  assert.equal(schema.status, 200);
+  assert.equal(schema.json().resources.users.routePath, '/users');
+  assert.equal(batch.status, 200);
+  assert.equal(batch.json()[0].body[0].id, 'u_1');
+  assert.equal(graphql.status, 200);
+  assert.deepEqual(graphql.json().data.users, [{ id: 'u_1' }]);
+  assert.equal(rootUsers.status, null);
+  assert.equal(passedThrough, true);
+});
+
+test('request handler preserves standalone root REST and GraphQL routes', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const handler = createJsonDbRequestHandler(db);
+  const users = makeResponse();
+  const graphql = makeResponse();
+
+  assert.equal(await handler(makeRequest('GET', '/users'), users), true);
+  assert.equal(await handler(makeRequest('POST', '/graphql', {
+    query: '{ users { id } }',
+  }), graphql), true);
+
+  assert.equal(users.status, 200);
+  assert.deepEqual(users.json(), [{ id: 'u_1', name: 'Ada' }]);
+  assert.equal(graphql.status, 200);
+  assert.deepEqual(graphql.json().data.users, [{ id: 'u_1' }]);
+});
+
+function makeRequest(method, path, body) {
+  return {
+    method,
+    url: path,
+    headers: {},
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) {
+        yield Buffer.from(JSON.stringify(body));
+      }
+    },
+    on() {},
+  };
+}
+
+function makeResponse() {
+  return {
+    status: null,
+    headers: {},
+    body: '',
+    writeHead(status, headers = {}) {
+      this.status = status;
+      this.headers = headers;
+    },
+    write(chunk = '') {
+      this.body += chunk;
+    },
+    end(chunk = '') {
+      this.body += chunk;
+    },
+    json() {
+      return this.body ? JSON.parse(this.body) : null;
+    },
+  };
+}

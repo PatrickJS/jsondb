@@ -13,6 +13,18 @@ export type FieldOptions<DefaultValue> = {
   nullable?: boolean;
   description?: string;
   default?: DefaultValue;
+  relation?: RelationDefinition;
+};
+
+export type RelationDefinition = {
+  /** Output name used by REST expand, such as "author" for authorId. */
+  name?: string;
+  /** Target collection resource name. */
+  to: string;
+  /** Target collection field. Defaults to "id". */
+  toField?: string;
+  /** MVP supports explicit to-one expansion. */
+  cardinality?: 'one' | 'many';
 };
 
 export type ObjectFieldOptions = FieldOptions<Record<string, unknown>> & {

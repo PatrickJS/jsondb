@@ -154,6 +154,212 @@ test('REST schema endpoint exposes route paths for the viewer', async () => {
   assert.equal(response.json().resources.auditEvents.routePath, '/audit-events');
 });
 
+test('REST collection reads support select offset and limit', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'posts.json', JSON.stringify([
+    {
+      id: 'p_1',
+      title: 'First',
+      body: 'Draft',
+    },
+    {
+      id: 'p_2',
+      title: 'Second',
+      body: 'Published',
+    },
+    {
+      id: 'p_3',
+      title: 'Third',
+      body: 'Archived',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/posts?select=id,title&offset=1&limit=1'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.json(), [
+    {
+      id: 'p_2',
+      title: 'Second',
+    },
+  ]);
+});
+
+test('REST single record reads support select', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'posts.json', JSON.stringify([
+    {
+      id: 'p_1',
+      title: 'Intro',
+      body: 'Long body',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/posts/p_1?select=id,title'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.json(), {
+    id: 'p_1',
+    title: 'Intro',
+  });
+});
+
+test('REST select and pagination errors are structured', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'posts.json', JSON.stringify([
+    {
+      id: 'p_1',
+      title: 'Intro',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const selectResponse = makeResponse();
+  const limitResponse = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    selectResponse,
+    new URL('http://jsondb.local/posts?select=id,badField'),
+  );
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    limitResponse,
+    new URL('http://jsondb.local/posts?limit=0'),
+  );
+
+  assert.equal(selectResponse.status, 400);
+  assert.equal(selectResponse.json().error.code, 'REST_SELECT_UNKNOWN_FIELD');
+  assert.equal(selectResponse.json().error.details.field, 'badField');
+  assert.match(selectResponse.json().error.hint, /Use one of/);
+  assert.equal(limitResponse.status, 400);
+  assert.equal(limitResponse.json().error.code, 'REST_INVALID_LIMIT');
+  assert.equal(limitResponse.json().error.details.limit, '0');
+});
+
+test('REST reads can expand explicit to-one relations and project nested fields', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'authors.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true },
+      "email": { "type": "string" }
+    },
+    "seed": [
+      { "id": "a_1", "name": "Ada Lovelace", "email": "ada@example.com" }
+    ]
+  }`);
+  await writeFixture(cwd, 'posts.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "title": { "type": "string", "required": true },
+      "authorId": {
+        "type": "string",
+        "required": true,
+        "relation": {
+          "name": "author",
+          "to": "authors",
+          "toField": "id",
+          "cardinality": "one"
+        }
+      }
+    },
+    "seed": [
+      { "id": "p_1", "title": "Intro", "authorId": "a_1" }
+    ]
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/posts/p_1?expand=author&select=id,title,author.name'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.json(), {
+    id: 'p_1',
+    title: 'Intro',
+    author: {
+      name: 'Ada Lovelace',
+    },
+  });
+});
+
+test('REST nested select requires explicit expand', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'authors.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [
+      { "id": "a_1", "name": "Ada Lovelace" }
+    ]
+  }`);
+  await writeFixture(cwd, 'posts.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "authorId": {
+        "type": "string",
+        "required": true,
+        "relation": {
+          "name": "author",
+          "to": "authors",
+          "toField": "id",
+          "cardinality": "one"
+        }
+      }
+    },
+    "seed": [
+      { "id": "p_1", "authorId": "a_1" }
+    ]
+  }`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/posts/p_1?select=id,author.name'),
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(response.json().error.code, 'REST_SELECT_REQUIRES_EXPAND');
+  assert.match(response.json().error.hint, /expand=author/);
+});
+
 test('REST viewer import endpoint saves CSV fixtures and reloads resources', async () => {
   const cwd = await makeProject();
   const db = await openJsonFixtureDb({ cwd });

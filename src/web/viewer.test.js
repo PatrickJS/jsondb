@@ -25,6 +25,9 @@ test('web viewer renders the jsondb tool surface', () => {
   assert.match(html, /copy it into db\//);
   assert.match(html, /id="csv-drop"/);
   assert.match(html, /id="diagnostics-view"/);
+  assert.match(html, /Relations/);
+  assert.match(html, /expand=/);
+  assert.match(html, /data-relation-link/);
   assert.match(html, /\/__jsondb\/import/);
   assert.match(html, /x-jsondb-file-name/);
 });
@@ -36,6 +39,24 @@ test('web viewer renders configured fixture folder label', () => {
   });
 
   assert.match(html, /copy it into jsondb\//);
+});
+
+test('web viewer renders configured scoped API paths', () => {
+  const html = renderJsonDbViewer({
+    graphqlPath: '/__jsondb/graphql',
+    schemaPath: '/__jsondb/schema',
+    eventsPath: '/__jsondb/events',
+    importPath: '/__jsondb/import',
+    restBatchPath: '/__jsondb/batch',
+    restBasePath: '/__jsondb/rest',
+  });
+
+  assert.match(html, /const GRAPHQL_PATH = "\/__jsondb\/graphql"/);
+  assert.match(html, /const SCHEMA_PATH = "\/__jsondb\/schema"/);
+  assert.match(html, /const EVENTS_PATH = "\/__jsondb\/events"/);
+  assert.match(html, /const IMPORT_PATH = "\/__jsondb\/import"/);
+  assert.match(html, /const REST_BATCH_PATH = "\/__jsondb\/batch"/);
+  assert.match(html, /const REST_BASE_PATH = "\/__jsondb\/rest"/);
 });
 
 test('web viewer local CSS does not override Tailwind layout utilities', () => {
@@ -53,6 +74,6 @@ test('web viewer local CSS does not override Tailwind layout utilities', () => {
   assert.match(html, /url\.searchParams\.delete\('resource'\)/);
   assert.match(html, /await loadSelectedData\(\);\n      renderRestExamples\(\);\n      renderGraphqlExamples\(\);/);
   assert.match(html, /function nextRecordId\(resource\)/);
-  assert.match(html, /new EventSource\('\/__jsondb\/events'\)/);
+  assert.match(html, /new EventSource\(EVENTS_PATH\)/);
   assert.doesNotMatch(html, /class="(?:app|layout|toolbar|tabs|tab|viewer-grid|panel|panel-head|panel-body|stack|row|muted|code|table-wrap|example|example-head|resource-button|is-hidden)"/);
 });

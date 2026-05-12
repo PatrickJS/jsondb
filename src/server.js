@@ -17,9 +17,13 @@ export async function startJsonDbServer(options = {}) {
   const host = options.host ?? db.config.server?.host ?? '127.0.0.1';
   const port = Number(options.port ?? db.config.server?.port ?? 7331);
   const events = createViewerEventHub();
+  const requestHandler = createJsonDbRequestHandler(db, {
+    events,
+    rootRoutes: true,
+  });
   let watcher;
   const server = http.createServer((request, response) => {
-    handleRequest(db, request, response, events).catch((error) => {
+    requestHandler(request, response).catch((error) => {
       sendJson(response, error.status ?? 500, serializeError(error, 'SERVER_ERROR'));
     });
   });
@@ -54,25 +58,45 @@ export async function startJsonDbServer(options = {}) {
   };
 }
 
-async function handleRequest(db, request, response, events) {
+export function createJsonDbRequestHandler(db, options = {}) {
+  const events = options.events ?? createViewerEventHub();
+  const routes = resolveRequestRoutes(db.config, options);
+
+  return async function jsonDbRequestHandler(request, response, next) {
+    const handled = await handleRequest(db, request, response, events, routes);
+    if (!handled && typeof next === 'function') {
+      next();
+    }
+    return handled;
+  };
+}
+
+async function handleRequest(db, request, response, events, routes) {
   const url = new URL(request.url, 'http://jsondb.local');
-  if (request.method === 'GET' && url.pathname === '/__jsondb/events') {
+  if (request.method === 'GET' && url.pathname === routes.eventsPath) {
     events.subscribe(request, response, db);
-    return;
+    return true;
+  }
+
+  const restUrl = restUrlForRequest(url, routes);
+  const handlesGraphql = db.config.graphql?.enabled !== false && url.pathname === routes.graphqlPath;
+  if (!restUrl && !handlesGraphql) {
+    return false;
   }
 
   const mockResult = await runMockBehavior(db.config, url);
   if (mockResult) {
     sendJson(response, mockResult.status, mockResult.body);
-    return;
+    return true;
   }
 
-  if (db.config.graphql?.enabled !== false && url.pathname === (db.config.graphql?.path ?? '/graphql')) {
+  if (handlesGraphql) {
     await handleGraphqlRequest(db, request, response);
-    return;
+    return true;
   }
 
-  await handleRestRequest(db, request, response, url);
+  await handleRestRequest(db, request, response, restUrl, routes);
+  return true;
 }
 
 export async function reloadJsonFixtureDb(db) {
@@ -202,7 +226,7 @@ function shouldIgnoreSourceEvent(db, filename) {
   return relativeStatePath === '' || (!relativeStatePath.startsWith('..') && !path.isAbsolute(relativeStatePath));
 }
 
-function createViewerEventHub() {
+export function createViewerEventHub() {
   const clients = new Set();
 
   return {
@@ -239,4 +263,59 @@ function createViewerEventHub() {
 
 function writeViewerEvent(response, payload) {
   response.write(`event: jsondb\ndata: ${JSON.stringify(payload)}\n\n`);
+}
+
+function resolveRequestRoutes(config, options) {
+  const apiBase = normalizeBasePath(options.apiBase ?? '/__jsondb');
+  const restBasePath = options.restBasePath === undefined
+    ? null
+    : normalizeBasePath(options.restBasePath);
+  const graphqlPath = normalizeBasePath(options.graphqlPath ?? config.graphql?.path ?? '/graphql');
+
+  return {
+    apiBase,
+    rootRoutes: options.rootRoutes !== false,
+    restBasePath,
+    graphqlPath,
+    viewerPath: apiBase,
+    schemaPath: `${apiBase}/schema`,
+    batchPath: `${apiBase}/batch`,
+    importPath: `${apiBase}/import`,
+    eventsPath: `${apiBase}/events`,
+  };
+}
+
+function restUrlForRequest(url, routes) {
+  if (routes.restBasePath && pathStartsWith(url.pathname, routes.restBasePath)) {
+    return stripPathBase(url, routes.restBasePath);
+  }
+
+  if (routes.rootRoutes) {
+    return url;
+  }
+
+  if ([routes.viewerPath, routes.schemaPath, routes.batchPath, routes.importPath].includes(url.pathname)) {
+    return url;
+  }
+
+  return null;
+}
+
+function stripPathBase(url, basePath) {
+  const next = new URL(url.href);
+  const stripped = next.pathname.slice(basePath.length);
+  next.pathname = stripped.startsWith('/') ? stripped : `/${stripped}`;
+  if (next.pathname === '/') {
+    return next;
+  }
+  return next;
+}
+
+function pathStartsWith(pathname, basePath) {
+  return pathname === basePath || pathname.startsWith(`${basePath}/`);
+}
+
+function normalizeBasePath(value) {
+  const pathValue = `/${String(value ?? '').replace(/^\/+/, '').replace(/\/+$/, '')}`;
+  return pathValue === '/' ? '' : pathValue;
 }

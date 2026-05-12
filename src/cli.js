@@ -2,6 +2,7 @@
 import { watch } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.js';
+import { runJsonDbDoctor } from './doctor.js';
 import { openJsonFixtureDb } from './db.js';
 import { generateHonoStarter } from './generate/hono.js';
 import { loadProjectSchema } from './schema.js';
@@ -45,6 +46,10 @@ async function main() {
       break;
     case 'schema':
       await runSchema(config, args.slice(1));
+      break;
+    case 'doctor':
+    case 'check':
+      await runDoctor(config, args.slice(1));
       break;
     case 'create':
       await runCreate(config, args.slice(1));
@@ -132,6 +137,20 @@ async function runSchema(config, args) {
   console.log(JSON.stringify(project.schema, null, 2));
 }
 
+async function runDoctor(config, args) {
+  const result = await runJsonDbDoctor(config);
+
+  if (args.includes('--json')) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    printDoctorResult(result);
+  }
+
+  if (result.summary.error > 0 || (args.includes('--strict') && result.summary.warn > 0)) {
+    process.exitCode = 1;
+  }
+}
+
 async function runCreate(config, args) {
   const [collectionName, json] = args;
   if (!collectionName || !json) {
@@ -199,6 +218,21 @@ function printDiagnostic(diagnostic) {
   console.error(`${prefix}: ${diagnostic.message}`);
 }
 
+function printDoctorResult(result) {
+  if (result.findings.length === 0) {
+    console.log('jsondb doctor found no issues');
+    return;
+  }
+
+  console.log(`jsondb doctor found ${result.findings.length} finding${result.findings.length === 1 ? '' : 's'}`);
+  for (const finding of result.findings) {
+    console.log(`${finding.severity}: ${finding.code}: ${finding.message}`);
+    if (finding.hint) {
+      console.log(`  hint: ${finding.hint}`);
+    }
+  }
+}
+
 function printHelp() {
   console.log(`jsondb
 
@@ -207,6 +241,8 @@ Usage:
   jsondb types [--watch] [--out <file>]
   jsondb schema [resource]
   jsondb schema validate
+  jsondb doctor [--strict] [--json]
+  jsondb check [--strict] [--json]
   jsondb create <collection> <json>
   jsondb serve [--host <host>] [--port <port>]
   jsondb generate hono [--out <dir>] [--api <targets>] [--app <shape>]

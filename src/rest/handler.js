@@ -5,45 +5,54 @@ import { jsonDbError, listChoices, serializeError } from '../errors.js';
 import { makeGeneratedSchema } from '../schema.js';
 import { syncJsonFixtureDb } from '../sync.js';
 import { renderJsonDbViewer } from '../web/viewer.js';
+import { shapeCollectionRead } from './shape.js';
 
-export async function handleRestRequest(db, request, response, url = new URL(request.url, 'http://jsondb.local')) {
+export async function handleRestRequest(db, request, response, url = new URL(request.url, 'http://jsondb.local'), options = {}) {
   try {
-    await handleRestRequestUnsafe(db, request, response, url);
+    await handleRestRequestUnsafe(db, request, response, url, options);
   } catch (error) {
     sendJson(response, error.status ?? 500, serializeError(error, 'REST_ERROR'));
   }
 }
 
-async function handleRestRequestUnsafe(db, request, response, url) {
-  if (request.method === 'GET' && url.pathname === '/__jsondb') {
+async function handleRestRequestUnsafe(db, request, response, url, options) {
+  const routeOptions = normalizeRestRouteOptions(db, options);
+
+  if (request.method === 'GET' && url.pathname === routeOptions.viewerPath) {
     sendText(response, 200, renderJsonDbViewer({
-      graphqlPath: db.config.graphql?.path ?? '/graphql',
+      graphqlPath: routeOptions.graphqlPath,
+      schemaPath: routeOptions.schemaPath,
+      eventsPath: routeOptions.eventsPath,
+      importPath: routeOptions.importPath,
+      restBatchPath: routeOptions.batchPath,
+      restBasePath: routeOptions.restBasePath,
       sourceDirLabel: sourceDirLabel(db.config),
     }), 'text/html; charset=utf-8');
     return;
   }
 
-  if (request.method === 'POST' && url.pathname === '/__jsondb/batch') {
+  if (request.method === 'POST' && url.pathname === routeOptions.batchPath) {
     const result = await tryRest(async () => executeRestBatch(db, await readJsonBody(request, {
       maxBytes: maxBodyBytes(db),
-    })));
+    }), routeOptions));
     sendJson(response, result.status, result.body);
     return;
   }
 
-  if (request.method === 'POST' && url.pathname === '/__jsondb/import') {
-    sendJson(response, 201, await importCsvFixture(db, request));
+  if (request.method === 'POST' && url.pathname === routeOptions.importPath) {
+    sendJson(response, 201, await importCsvFixture(db, request, routeOptions));
     return;
   }
 
-  if (request.method === 'GET' && url.pathname === '/__jsondb/schema') {
+  if (request.method === 'GET' && url.pathname === routeOptions.schemaPath) {
     sendJson(response, 200, makeGeneratedSchema([...db.resources.values()], db.diagnostics ?? []));
     return;
   }
 
-  const [routeName, id] = url.pathname.split('/').filter(Boolean);
+  const resourceUrl = restResourceUrl(url, routeOptions);
+  const [routeName, id] = resourceUrl.pathname.split('/').filter(Boolean);
   if (!routeName) {
-    const discovery = rootDiscovery(db);
+    const discovery = rootDiscovery(db, routeOptions);
     if (request.method === 'GET' && requestPrefersHtml(request)) {
       sendText(response, 200, renderRootDiscovery(discovery), 'text/html; charset=utf-8');
       return;
@@ -70,7 +79,7 @@ async function handleRestRequestUnsafe(db, request, response, url) {
   }
 
   if (resource.kind === 'collection') {
-    await handleCollection(db, resource, id, request, response);
+    await handleCollection(db, resource, id, request, response, resourceUrl);
   } else {
     await handleDocument(db, resource, request, response);
   }
@@ -81,7 +90,7 @@ export function findResourceByRoute(db, routeName) {
     ?? [...db.resources.values()].find((candidate) => candidate.routePath.slice(1) === routeName);
 }
 
-export async function executeRestBatch(db, body) {
+export async function executeRestBatch(db, body, options = {}) {
   const requests = Array.isArray(body) ? body : body.requests;
   if (!Array.isArray(requests)) {
     throw jsonDbError(
@@ -102,7 +111,7 @@ export async function executeRestBatch(db, body) {
     try {
       results.push({
         index,
-        ...await executeRestBatchItem(db, request),
+        ...await executeRestBatchItem(db, request, options),
       });
     } catch (error) {
       results.push({
@@ -169,15 +178,49 @@ function maxBodyBytes(db) {
   return Number(db.config.server?.maxBodyBytes ?? 1048576);
 }
 
+function normalizeRestRouteOptions(db, options = {}) {
+  const apiBase = normalizeBasePath(options.apiBase ?? '/__jsondb');
+  return {
+    apiBase,
+    viewerPath: options.viewerPath ?? apiBase,
+    schemaPath: options.schemaPath ?? `${apiBase}/schema`,
+    batchPath: options.batchPath ?? `${apiBase}/batch`,
+    importPath: options.importPath ?? `${apiBase}/import`,
+    eventsPath: options.eventsPath ?? `${apiBase}/events`,
+    graphqlPath: options.graphqlPath ?? db.config.graphql?.path ?? '/graphql',
+    restBasePath: options.restBasePath ?? '',
+  };
+}
+
+function restResourceUrl(url, options) {
+  if (!options.restBasePath || !pathStartsWith(url.pathname, options.restBasePath)) {
+    return url;
+  }
+
+  const next = new URL(url.href);
+  const stripped = next.pathname.slice(options.restBasePath.length);
+  next.pathname = stripped.startsWith('/') ? stripped : `/${stripped}`;
+  return next;
+}
+
+function pathStartsWith(pathname, basePath) {
+  return pathname === basePath || pathname.startsWith(`${basePath}/`);
+}
+
+function normalizeBasePath(value) {
+  const pathValue = `/${String(value ?? '').replace(/^\/+/, '').replace(/\/+$/, '')}`;
+  return pathValue === '/' ? '' : pathValue;
+}
+
 function sourceDirLabel(config) {
   const relative = path.relative(config.cwd, config.sourceDir) || '.';
   return `${relative.split(path.sep).join('/')}/`;
 }
 
-function rootDiscovery(db) {
-  const schemaPath = '/__jsondb/schema';
-  const viewerPath = '/__jsondb';
-  const graphqlPath = db.config.graphql?.path ?? '/graphql';
+function rootDiscovery(db, options = {}) {
+  const schemaPath = options.schemaPath ?? '/__jsondb/schema';
+  const viewerPath = options.viewerPath ?? '/__jsondb';
+  const graphqlPath = options.graphqlPath ?? db.config.graphql?.path ?? '/graphql';
 
   return {
     resources: db.resourceNames(),
@@ -188,9 +231,19 @@ function rootDiscovery(db) {
       viewer: viewerPath,
       schema: schemaPath,
       graphql: graphqlPath,
-      resources: Object.fromEntries([...db.resources.values()].map((resource) => [resource.name, resource.routePath])),
+      resources: Object.fromEntries([...db.resources.values()].map((resource) => [resource.name, joinPaths(options.restBasePath ?? '', resource.routePath)])),
     },
   };
+}
+
+function joinPaths(basePath, routePath) {
+  if (!basePath) {
+    return routePath;
+  }
+
+  const base = `/${String(basePath).replace(/^\/+/, '').replace(/\/+$/, '')}`;
+  const route = `/${String(routePath || '/').replace(/^\/+/, '')}`;
+  return `${base}${route === '/' ? '' : route}`;
 }
 
 function requestPrefersHtml(request) {
@@ -319,7 +372,7 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-async function importCsvFixture(db, request) {
+async function importCsvFixture(db, request, options = {}) {
   const filename = csvFilenameFromRequest(request);
   const body = await readRawBody(request, {
     maxBytes: maxBodyBytes(db),
@@ -344,7 +397,7 @@ async function importCsvFixture(db, request) {
     dataPath: path.relative(db.config.cwd, outFile),
     statePath: path.relative(db.config.cwd, path.join(db.config.stateDir, 'state', `${resourceName}.json`)),
     routePath: resource?.routePath ?? `/${resourceName}`,
-    viewerPath: `/__jsondb?resource=${encodeURIComponent(resourceName)}`,
+    viewerPath: `${options.viewerPath ?? '/__jsondb'}?resource=${encodeURIComponent(resourceName)}`,
     logs: project.logs,
   };
 }
@@ -408,7 +461,7 @@ export function sendText(response, status, body, contentType) {
   response.end(body);
 }
 
-async function executeRestBatchItem(db, item) {
+async function executeRestBatchItem(db, item, options = {}) {
   if (!item || typeof item !== 'object' || Array.isArray(item)) {
     throw jsonDbError(
       'REST_BATCH_INVALID_ITEM',
@@ -452,6 +505,7 @@ async function executeRestBatchItem(db, item) {
     makeBatchRequest(method, item.body),
     response,
     new URL(requestPath, 'http://jsondb.local'),
+    options,
   );
 
   return {
@@ -519,17 +573,20 @@ function makeBatchResponse() {
   };
 }
 
-async function handleCollection(db, resource, id, request, response) {
+async function handleCollection(db, resource, id, request, response, url) {
   const collection = db.collection(resource.name);
 
   if (request.method === 'GET' && !id) {
-    sendJson(response, 200, await collection.all());
+    sendJson(response, 200, await shapeCollectionRead(db, resource, await collection.all(), url, { allowPagination: true }));
     return;
   }
 
   if (request.method === 'GET' && id) {
     const record = await collection.get(id);
-    sendJson(response, record ? 200 : 404, record ?? { error: 'Not found' });
+    const body = record
+      ? await shapeCollectionRead(db, resource, [record], url, { allowPagination: false })
+      : null;
+    sendJson(response, record ? 200 : 404, body?.[0] ?? { error: 'Not found' });
     return;
   }
 

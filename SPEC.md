@@ -632,6 +632,42 @@ src/web/
 
 REST should expose generated collection and singleton document routes.
 
+Collection and single-record reads should support selective response shapes without changing the REST-first model:
+
+```txt
+GET /posts?select=id,title
+GET /posts?offset=0&limit=20
+GET /posts/p1?select=id,title
+```
+
+`offset` must be a non-negative integer, `limit` must be a positive integer, and collection responses should remain arrays. Pagination is applied before projection.
+
+Schema-backed scalar fields can declare explicit to-one relation metadata:
+
+```jsonc
+{
+  "authorId": {
+    "type": "string",
+    "required": true,
+    "relation": {
+      "name": "author",
+      "to": "authors",
+      "toField": "id",
+      "cardinality": "one"
+    }
+  }
+}
+```
+
+Generated schema metadata should include normalized `relations` both on the resource and at the top level. REST should support depth-1 explicit to-one expansion:
+
+```txt
+GET /posts/p1?expand=author
+GET /posts/p1?expand=author&select=id,title,author.name
+```
+
+`select=author.name` without `expand=author` should fail with a structured hint. Missing required relation targets should produce schema diagnostics; optional missing targets should expand as `null`.
+
 REST should support sequential batch requests:
 
 ```txt
@@ -683,6 +719,17 @@ schema and field inspection
 diagnostics summary
 ```
 
+The CLI should include a fixture health check:
+
+```txt
+jsondb doctor
+jsondb doctor --json
+jsondb doctor --strict
+jsondb check --strict
+```
+
+`doctor` should include existing source/schema diagnostics and advisory fixture findings. It should detect duplicate collection ids, mixed id value types, inconsistent field value types, likely relation fields such as `todos.userId -> users.id`, and likely relation values missing from a target collection. Relation inference must be suggestive only; it must not mutate fixtures, write schema files, or silently change REST/GraphQL shape behavior. `doctor` should exit nonzero for error diagnostics, while `--strict` should also exit nonzero for warnings. Informational relation suggestions should not fail strict mode.
+
 CSV data-first fixtures should be treated as collections. The first row is the header row, headers become JSON field names, values are parsed into records, and the runtime mirror is written as `.jsondb/state/<resource>.json`. When a CSV data file is paired with a schema file, schema-declared array fields should coerce semicolon-delimited cells and JSON array string cells into arrays before validation and mirror sync.
 
 Collection fixtures should always have an id field. If a JSON/JSONC/CSV collection source omits `id`, generate counter ids in the runtime mirror, starting at `"1"` and avoiding existing ids. In default `mode: 'mirror'`, source files stay unchanged. In non-mirror source mode, write generated ids back to plain `.json` fixtures.
@@ -698,6 +745,28 @@ POST /__jsondb/import
 The upload should copy the CSV into the configured fixture folder, run sync, reload the in-memory resources, update the URL query parameter to the imported resource, and reload the dashboard view.
 
 While serving, jsondb should watch the configured fixture folder for fixture and schema changes, ignoring `.jsondb/`. On change, reload resources and notify the single-file viewer through `/__jsondb/events` so the dashboard refreshes automatically. If one source file fails to parse or load, report a file-specific diagnostic in the viewer and keep the remaining valid resources available. If the runtime cannot create a file watcher because of environment resource limits such as `EMFILE` or `ENOSPC`, keep the HTTP server running, publish a warning diagnostic, and serve without live reload.
+
+Vite and Void development should be supported through a dependency-light plugin export:
+
+```js
+import { jsondbPlugin } from 'json-fixture-db/vite';
+
+export default {
+  plugins: [jsondbPlugin()],
+};
+```
+
+The plugin should return a plain Vite-compatible plugin object with `apply: 'serve'`, mount jsondb into the existing Vite dev middleware stack, and avoid bundling Node-only fixture runtime code into production builds. By default, Vite dev routes should be scoped under `/__jsondb` and should not answer root app routes:
+
+```txt
+GET  /__jsondb
+GET  /__jsondb/schema
+POST /__jsondb/batch
+POST /__jsondb/graphql
+GET  /__jsondb/rest/users
+```
+
+Standalone `jsondb serve` should keep root REST routes such as `/users` and `/graphql`. The Vite plugin may opt into root REST routes with `rootRoutes: true`.
 
 GraphQL should support a dependency-free subset suitable for local app development:
 
@@ -774,6 +843,7 @@ import { createJsonDbClient } from 'json-fixture-db/client';
 
 const client = createJsonDbClient({
   baseUrl: 'http://127.0.0.1:7331',
+  restBasePath: '',
   batching: {
     enabled: true,
     delayMs: 0,
@@ -788,6 +858,7 @@ client.graphql(query, variables)
 client.graphql.batch(requests)
 client.rest(method, path, body)
 client.rest.batch(requests)
+optional scoped REST base paths for embedded dev servers
 optional automatic batching for individual GraphQL and REST calls
 10ms default automatic batching window
 read-safe dedupe for identical REST GET and GraphQL query requests
