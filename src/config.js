@@ -10,6 +10,9 @@ export const DEFAULT_CONFIG = {
   stateDir: './.jsondb',
   schemaOutFile: null,
   schemaManifest: {},
+  sources: {
+    readers: [],
+  },
   mode: 'mirror',
   types: {
     enabled: true,

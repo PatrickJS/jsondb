@@ -1,5 +1,14 @@
 import type { JsonDbOptions } from './index.d.ts';
 
+export type {
+  JsonDbSourceReader,
+  JsonDbSourceReaderContext,
+  JsonDbSourceReaderResult,
+  JsonDbSourceReaderDataResult,
+  JsonDbSourceReaderSchemaResult,
+  JsonDbSourcesOptions,
+} from './index.d.ts';
+
 /**
  * jsondb project configuration.
  *

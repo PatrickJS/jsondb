@@ -22,10 +22,9 @@ export function parseFixturePath(file) {
   const normalized = String(file).split('\\').join('/');
   const parts = normalized.split('/').filter(Boolean);
   const filename = parts.at(-1) ?? '';
+  const extension = fixtureExtension(filename);
   const folders = parts.slice(1, -1);
-  const basename = filename
-    .replace(/\.schema\.(json|jsonc|mjs)$/i, '')
-    .replace(/\.(json|jsonc|csv)$/i, '');
+  const basename = extension ? filename.slice(0, -extension.length) : filename;
 
   return {
     file: normalized,
@@ -33,7 +32,7 @@ export function parseFixturePath(file) {
     folder: folders.at(-1) ?? null,
     filename,
     basename,
-    extension: fixtureExtension(filename),
+    extension,
   };
 }
 
@@ -85,5 +84,10 @@ function fixtureExtension(filename) {
   }
 
   const dataMatch = filename.match(/\.(json|jsonc|csv)$/i);
-  return dataMatch ? `.${dataMatch[1].toLowerCase()}` : '';
+  if (dataMatch) {
+    return `.${dataMatch[1].toLowerCase()}`;
+  }
+
+  const genericMatch = filename.match(/(\.[^./\\]+)$/);
+  return genericMatch ? genericMatch[1].toLowerCase() : '';
 }
