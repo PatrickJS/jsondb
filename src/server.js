@@ -240,7 +240,7 @@ function shouldIgnoreSourceEvent(db, filename) {
   }
 
   const relativePath = path.normalize(String(filename));
-  if (relativePath === '.jsondb' || relativePath.startsWith(`.jsondb${path.sep}`)) {
+  if (relativePath.split(path.sep).some((part) => part.startsWith('.'))) {
     return true;
   }
 

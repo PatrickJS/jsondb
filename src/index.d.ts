@@ -73,7 +73,7 @@ export type JsonDbResourceOptions = {
     | undefined;
 };
 
-export type JsonDbRuntimeStrategy = 'json' | 'memory' | 'static' | string;
+export type JsonDbRuntimeStrategy = 'json' | 'memory' | 'source' | 'static' | string;
 
 export type JsonDbRuntimeCapabilities = {
   writable?: boolean;

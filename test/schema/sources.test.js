@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { syncJsonFixtureDb, loadConfig, loadProjectSchema, generateTypes } from '../../src/index.js';
@@ -305,6 +305,20 @@ test('source load errors report the file and keep other resources available when
   assert.equal(project.diagnostics[0].file, 'db/broken.json');
   assert.match(project.diagnostics[0].message, /Could not load db\/broken\.json/);
   assert.match(await readFile(path.join(cwd, '.jsondb/schema.generated.json'), 'utf8'), /SOURCE_LOAD_FAILED/);
+});
+
+test('source discovery ignores dot folders inside db', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await mkdir(path.join(cwd, 'db/.jsondb/state'), { recursive: true });
+  await writeFile(path.join(cwd, 'db/.jsondb/state/internal.json'), `${JSON.stringify([{ id: 'leak' }])}\n`, 'utf8');
+  await mkdir(path.join(cwd, 'db/.cache'), { recursive: true });
+  await writeFile(path.join(cwd, 'db/.cache/hidden.json'), `${JSON.stringify([{ id: 'hidden' }])}\n`, 'utf8');
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+
+  assert.deepEqual(project.resources.map((resource) => resource.name), ['users']);
 });
 
 test('custom source readers can load data files with source context helpers', async () => {

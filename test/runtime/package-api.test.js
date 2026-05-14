@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { openJsonFixtureDb } from '../../src/index.js';
@@ -315,4 +315,38 @@ test('runtime emits live events only after successful writes', async () => {
   assert.equal(events[0].id, 'u_2');
   assert.equal(events[0].version, 1);
   assert.match(events[0].timestamp, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('source runtime writes plain JSON fixture while mirror remains default', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'settings.json', JSON.stringify({
+    theme: 'light',
+  }));
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    { id: 'u_1', name: 'Ada Lovelace' },
+  ]));
+  await writeConfig(cwd, `export default {
+    resources: {
+      settings: {
+        runtime: 'source'
+      }
+    }
+  };`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  await db.document('settings').update({ theme: 'dark' });
+  await db.collection('users').create({ id: 'u_2', name: 'Grace Hopper' });
+
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, 'db/settings.json'), 'utf8')), {
+    theme: 'dark',
+  });
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8')), [
+    { id: 'u_1', name: 'Ada Lovelace' },
+    { id: 'u_2', name: 'Grace Hopper' },
+  ]);
+  await assert.rejects(
+    () => access(path.join(cwd, '.jsondb/state/settings.json')),
+    { code: 'ENOENT' },
+  );
+  assert.equal(JSON.parse(await readFile(path.join(cwd, '.jsondb/schema.generated.json'), 'utf8')).resources.settings.kind, 'document');
 });
