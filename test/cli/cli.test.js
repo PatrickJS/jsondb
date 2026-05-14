@@ -46,3 +46,26 @@ test('CLI types --out writes relative to --cwd', async () => {
   assert.match(stdout, /Generated src\/generated\/jsondb\.types\.ts/);
   assert.match(generated, /export type User =/);
 });
+
+test('CLI subcommands print focused help without running the command', async () => {
+  await assertCliHelp(['schema', '--help'], /Usage:\n  jsondb schema \[resource\]/);
+  await assertCliHelp(['types', '--help'], /Usage:\n  jsondb types \[--watch\] \[--out <file>\]/);
+  await assertCliHelp(['doctor', '--help'], /Usage:\n  jsondb doctor \[--strict\] \[--json\]/);
+  await assertCliHelp(['serve', '--help'], /Usage:\n  jsondb serve \[--host <host>\] \[--port <port>\]/);
+  await assertCliHelp(['generate', 'hono', '--help'], /Usage:\n  jsondb generate hono/);
+});
+
+async function assertCliHelp(args, pattern) {
+  const cwd = await makeProject();
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    ...args,
+    '--cwd',
+    cwd,
+  ], {
+    timeout: 1000,
+  });
+
+  assert.match(stdout, pattern);
+  assert.equal(stderr, '');
+}

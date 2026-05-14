@@ -1,0 +1,46 @@
+{
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable post id."
+    },
+    "title": {
+      "type": "string",
+      "required": true,
+      "description": "Post title shown in lists."
+    },
+    "authorId": {
+      "type": "string",
+      "required": true,
+      "description": "User id for the author.",
+      "relation": {
+        "name": "author",
+        "to": "users",
+        "toField": "id",
+        "cardinality": "one"
+      }
+    },
+    "status": {
+      "type": "enum",
+      "values": ["draft", "published"],
+      "default": "draft"
+    }
+  },
+  "seed": [
+    {
+      "id": "p_1",
+      "title": "Analytical engines for local demos",
+      "authorId": "u_1",
+      "status": "published"
+    },
+    {
+      "id": "p_2",
+      "title": "Orbital mechanics as fixture data",
+      "authorId": "u_2",
+      "status": "draft"
+    }
+  ]
+}

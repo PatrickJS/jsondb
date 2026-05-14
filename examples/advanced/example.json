@@ -1,0 +1,5 @@
+{
+  "title": "Advanced Schema Mix",
+  "description": "Mixed data and schema sources, .schema.mjs helpers, defaults, nested objects, and committed generated types.",
+  "tags": ["schema-mjs", "mixed-mode", "defaults"]
+}

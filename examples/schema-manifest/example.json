@@ -1,0 +1,5 @@
+{
+  "title": "Schema Manifest",
+  "description": "Committed schema metadata for admin or CMS-style forms with field customization hooks.",
+  "tags": ["manifest", "admin-ui", "customization"]
+}

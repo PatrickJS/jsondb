@@ -3,10 +3,15 @@ import { jsonDbError, listChoices } from '../../errors.js';
 import { resolveResource } from '../../names.js';
 import { loadProjectSchema } from '../../schema.js';
 import { generateSchemaManifest } from '../../schema-manifest.js';
-import { valueAfter } from '../args.js';
-import { printDiagnostic } from '../output.js';
+import { isHelpRequested, valueAfter } from '../args.js';
+import { printDiagnostic, printSchemaHelp } from '../output.js';
 
 export async function runSchema(config, args) {
+  if (isHelpRequested(args)) {
+    printSchemaHelp();
+    return;
+  }
+
   const project = await loadProjectSchema(config);
 
   if (args[0] === 'manifest') {

@@ -13,3 +13,7 @@ export function valueAfter(args, flag) {
 
   return args[index + 1];
 }
+
+export function isHelpRequested(args) {
+  return args.includes('--help') || args.includes('-h');
+}

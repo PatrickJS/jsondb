@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "collections": {
+    "projects": {
+      "kind": "collection",
+      "name": "projects",
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "description": "Stable project id.",
+          "ui": {
+            "label": "Id",
+            "component": "text",
+            "readonly": true
+          }
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "description": "Project display name.",
+          "ui": {
+            "label": "Name",
+            "component": "text"
+          }
+        },
+        "ownerId": {
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "description": "Owner user id.",
+          "relation": {
+            "name": "owner",
+            "to": "users",
+            "toField": "id",
+            "cardinality": "one"
+          },
+          "ui": {
+            "label": "Owner Id",
+            "component": "relationSelect",
+            "optionsFrom": "users"
+          }
+        },
+        "status": {
+          "type": "enum",
+          "required": false,
+          "nullable": false,
+          "description": "Workflow status for local admin forms.",
+          "default": "planned",
+          "values": [
+            "planned",
+            "active",
+            "paused",
+            "done"
+          ],
+          "ui": {
+            "label": "Status",
+            "component": "segmented-control"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "required": false,
+          "nullable": false,
+          "description": "Internal project notes.",
+          "maxLength": 500,
+          "ui": {
+            "label": "Notes",
+            "component": "textarea"
+          }
+        }
+      },
+      "description": "Projects used to demonstrate generated form metadata.",
+      "idField": "id"
+    },
+    "users": {
+      "kind": "collection",
+      "name": "users",
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "description": "Stable user id.",
+          "ui": {
+            "label": "Id",
+            "component": "text",
+            "readonly": true
+          }
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "description": "Display name.",
+          "ui": {
+            "label": "Name",
+            "component": "text"
+          }
+        },
+        "email": {
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "description": "Email shown in admin forms.",
+          "unique": true,
+          "ui": {
+            "label": "Email",
+            "component": "email"
+          }
+        },
+        "bio": {
+          "type": "string",
+          "required": false,
+          "nullable": false,
+          "description": "Markdown biography for profile previews.",
+          "ui": {
+            "label": "Bio",
+            "component": "markdown"
+          }
+        }
+      },
+      "description": "People who can own local projects.",
+      "idField": "id"
+    }
+  },
+  "documents": {}
+}

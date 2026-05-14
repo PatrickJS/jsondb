@@ -1,5 +1,8 @@
-export default {
-  sourceDir: './db',
+// @ts-check
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  dbDir: './db',
   stateDir: './.jsondb',
   mode: 'mirror',
   types: {
@@ -9,4 +12,4 @@ export default {
   schema: {
     unknownFields: 'warn',
   },
-};
+});

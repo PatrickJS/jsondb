@@ -1,0 +1,35 @@
+{
+  "kind": "collection",
+  "idField": "id",
+  "description": "People who can own local projects.",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable user id."
+    },
+    "name": {
+      "type": "string",
+      "required": true,
+      "description": "Display name."
+    },
+    "email": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "description": "Email shown in admin forms."
+    },
+    "bio": {
+      "type": "string",
+      "description": "Markdown biography for profile previews."
+    }
+  },
+  "seed": [
+    {
+      "id": "u_1",
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "bio": "First programmer notes for local demos."
+    }
+  ]
+}

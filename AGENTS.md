@@ -31,10 +31,23 @@ Important files:
 - `src/client.js`: tiny HTTP client with GraphQL and REST batching support.
 - `scripts/serve-examples.js`: starts every repo example and serves an index of viewer links.
 - `src/schema-builders.js`: `.schema.mjs` authoring helpers exported as `jsondb/schema`.
-- `test/jsondb.test.js`: general Node test runner suite.
 - `test/helpers.js`: shared test project helpers.
+- `test/**/*.test.js`: general Node test runner suite.
 - `src/**/*.test.js`: co-located protocol/module tests.
 - `examples/basic`: smoke-testable example project.
+
+Common edit paths:
+
+- Source discovery or custom readers: start in `src/features/schema/sources.js`.
+- Schema inference or field normalization: start in `src/features/schema/fields.js` and `src/features/schema/resource.js`.
+- Schema validation or diagnostics: start in `src/features/schema/validation.js`.
+- Runtime mirror sync or generated outputs: start in `src/features/sync/index.js`, `src/types.js`, and `src/schema-manifest.js`.
+- Package runtime APIs: start in `src/features/runtime/collection.js`, `src/features/runtime/document.js`, and `src/features/runtime/db.js`.
+- REST routes, request bodies, and response shaping: start in `src/rest/handler.js` and `src/rest/shape.js`.
+- GraphQL parsing or execution: start in `src/graphql/parser.js` and `src/graphql/execute.js`.
+- Built-in viewer behavior: start in `src/web/viewer.js`.
+- CLI command behavior: start in `src/cli/index.js` and `src/cli/commands/`.
+- Example discovery and the examples index: start in `scripts/serve-examples.js` and `examples/*/example.json`.
 
 ## Commands
 
@@ -69,6 +82,13 @@ Committed generated types are allowed when configured through `types.commitOutFi
 
 ```txt
 examples/basic/src/generated/jsondb.types.ts
+```
+
+Committed schema manifests are allowed when configured through `schemaOutFile`. The schema manifest example intentionally includes:
+
+```txt
+examples/schema-manifest/src/generated/jsondb.schema.json
+examples/schema-manifest/src/generated/jsondb.types.ts
 ```
 
 If a smoke command writes `.jsondb/` inside `examples/basic`, remove those generated files before finalizing unless the task explicitly asks to commit generated runtime state.

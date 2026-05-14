@@ -1,0 +1,5 @@
+{
+  "title": "Schema First",
+  "description": "Schema-only resources, empty seed records, generated types, and contract-first local APIs.",
+  "tags": ["schema-first", "types", "empty-seed"]
+}
