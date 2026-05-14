@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
-import { makeProject, writeFixture } from '../helpers.js';
+import { makeProject, writeConfig, writeFixture } from '../helpers.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -55,8 +55,20 @@ test('CLI subcommands print focused help without running the command', async () 
   await assertCliHelp(['generate', 'hono', '--help'], /Usage:\n  jsondb generate hono/);
 });
 
-async function assertCliHelp(args, pattern) {
+test('CLI subcommand help does not load project config', async () => {
   const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await writeConfig(cwd, 'throw new Error("broken config should not load for help");');
+
+  await assertCliHelp(['schema', '--help'], /Usage:\n  jsondb schema \[resource\]/, cwd);
+  await assertCliHelp(['types', '--help'], /Usage:\n  jsondb types \[--watch\] \[--out <file>\]/, cwd);
+  await assertCliHelp(['doctor', '--help'], /Usage:\n  jsondb doctor \[--strict\] \[--json\]/, cwd);
+  await assertCliHelp(['serve', '--help'], /Usage:\n  jsondb serve \[--host <host>\] \[--port <port>\]/, cwd);
+  await assertCliHelp(['generate', 'hono', '--help'], /Usage:\n  jsondb generate hono/, cwd);
+});
+
+async function assertCliHelp(args, pattern, cwd) {
+  cwd ??= await makeProject();
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     path.resolve('src/cli.js'),
     ...args,
