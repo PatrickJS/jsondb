@@ -37,6 +37,16 @@ export async function runSchema(config, args) {
     return;
   }
 
+  if (args[0] === 'split') {
+    await runSchemaSplit(config, project, args);
+    return;
+  }
+
+  if (args[0] === 'merge') {
+    await runSchemaMerge(config, project, args);
+    return;
+  }
+
   if (args[0] === 'validate') {
     for (const diagnostic of project.diagnostics) {
       printDiagnostic(diagnostic);
@@ -77,6 +87,73 @@ export async function runSchema(config, args) {
   }
 
   console.log(JSON.stringify(project.schema, null, 2));
+}
+
+async function runSchemaSplit(config, project, args) {
+  const resourceName = positionalArgs(args.slice(1))[0];
+  if (!resourceName) {
+    throw jsonDbError(
+      'SCHEMA_SPLIT_REQUIRES_RESOURCE',
+      'SCHEMA_SPLIT_REQUIRES_RESOURCE: schema split requires a resource name.',
+      {
+        hint: 'Use jsondb schema split users.',
+      },
+    );
+  }
+
+  const resource = requireSchemaResource(project, resourceName);
+  const explicitSchemaOutFile = outputPath(config, valueAfter(args, '--schema-out'));
+  if (!explicitSchemaOutFile && resource.schemaPath?.endsWith('.schema.mjs')) {
+    throw jsonDbError(
+      'SCHEMA_SPLIT_SCHEMA_MJS_REQUIRES_OUT',
+      `SCHEMA_SPLIT_SCHEMA_MJS_REQUIRES_OUT: schema split cannot rewrite ${path.relative(config.cwd, resource.schemaPath)} in place.`,
+      {
+        hint: 'Use --schema-out to write a JSON/JSONC schema source, then replace the .schema.mjs file when you are ready.',
+      },
+    );
+  }
+
+  const schemaOutFile = explicitSchemaOutFile ?? defaultSchemaOutFile(config, resource);
+  const explicitSeedOutFile = outputPath(config, valueAfter(args, '--seed-out'));
+  const shouldWriteSeed = explicitSeedOutFile !== undefined || !resource.dataPath;
+  const seedOutFile = explicitSeedOutFile ?? defaultSeedOutFile(config, resource);
+  const generated = [];
+
+  if (shouldWriteSeed) {
+    await writeText(seedOutFile, `${JSON.stringify(resource.seed, null, 2)}\n`);
+    generated.push(seedOutFile);
+  }
+
+  await writeText(schemaOutFile, `${JSON.stringify(schemaSourceForResource(resource), null, 2)}\n`);
+  generated.push(schemaOutFile);
+
+  for (const filePath of generated) {
+    console.log(`Generated ${path.relative(config.cwd, filePath)}`);
+  }
+}
+
+async function runSchemaMerge(config, project, args) {
+  const resourceName = positionalArgs(args.slice(1))[0];
+  if (!resourceName) {
+    throw jsonDbError(
+      'SCHEMA_MERGE_REQUIRES_RESOURCE',
+      'SCHEMA_MERGE_REQUIRES_RESOURCE: schema merge requires a resource name.',
+      {
+        hint: 'Use jsondb schema merge users --out db/users.schema.json.',
+      },
+    );
+  }
+
+  const resource = requireSchemaResource(project, resourceName);
+  const content = `${JSON.stringify(schemaSourceForResource(resource, { includeSeed: true }), null, 2)}\n`;
+  const outFile = outputPath(config, valueAfter(args, '--out'));
+  if (!outFile) {
+    console.log(content.trimEnd());
+    return;
+  }
+
+  await writeText(outFile, content);
+  console.log(`Generated ${path.relative(config.cwd, outFile)}`);
 }
 
 async function runSchemaInfer(config, args) {
@@ -139,7 +216,7 @@ function requireSchemaResource(project, name) {
   return resource;
 }
 
-function schemaSourceForResource(resource) {
+function schemaSourceForResource(resource, options = {}) {
   const source = {
     kind: resource.kind,
     fields: resource.fields,
@@ -149,14 +226,34 @@ function schemaSourceForResource(resource) {
     source.idField = resource.idField;
   }
 
+  if (options.includeSeed) {
+    source.seed = resource.seed;
+  }
+
   return source;
+}
+
+function outputPath(config, maybePath) {
+  return maybePath ? path.resolve(config.cwd, maybePath) : undefined;
+}
+
+function defaultSchemaOutFile(config, resource) {
+  if (resource.schemaPath && !resource.schemaPath.endsWith('.schema.mjs')) {
+    return resource.schemaPath;
+  }
+
+  return path.join(config.sourceDir, `${resource.name}.schema.jsonc`);
+}
+
+function defaultSeedOutFile(config, resource) {
+  return resource.dataPath ?? path.join(config.sourceDir, `${resource.name}.json`);
 }
 
 function positionalArgs(args) {
   const output = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--out' || arg === '--cwd' || arg === '--config') {
+    if (arg === '--out' || arg === '--schema-out' || arg === '--seed-out' || arg === '--cwd' || arg === '--config') {
       index += 1;
       continue;
     }

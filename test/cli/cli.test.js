@@ -96,6 +96,120 @@ test('CLI schema infer can print and write a single inferred resource', async ()
   assert.equal(schema.seed, undefined);
 });
 
+test('CLI schema validate warns when mixed mode schema embeds ignored seed', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [{ "id": "u_schema", "name": "Schema Seed" }]
+  }`);
+
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'validate',
+    '--cwd',
+    cwd,
+  ]);
+
+  assert.match(stdout, /Schema valid with warnings/);
+  assert.match(stderr, /db\/users\.schema\.jsonc includes seed records, but db\/users\.json provides seed data/);
+});
+
+test('CLI schema split migrates embedded schema seed into a separate data fixture', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [{ "id": "u_1", "name": "Ada" }]
+  }`);
+
+  const { stdout } = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'split',
+    'users',
+    '--cwd',
+    cwd,
+  ]);
+  const schema = JSON.parse(await readFile(path.join(cwd, 'db/users.schema.jsonc'), 'utf8'));
+  const seed = JSON.parse(await readFile(path.join(cwd, 'db/users.json'), 'utf8'));
+
+  assert.match(stdout, /Generated db\/users\.json/);
+  assert.match(stdout, /Generated db\/users\.schema\.jsonc/);
+  assert.equal(schema.seed, undefined);
+  assert.deepEqual(seed, [{ id: 'u_1', name: 'Ada' }]);
+});
+
+test('CLI schema split requires --schema-out for executable schema sources', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.mjs', `import { collection, field } from 'jsondb/schema';
+
+export default collection({
+  idField: 'id',
+  fields: {
+    id: field.string({ required: true }),
+    name: field.string({ required: true }),
+  },
+  seed: [{ id: 'u_1', name: 'Ada' }],
+});
+`);
+
+  await assert.rejects(
+    () => execFileAsync(process.execPath, [
+      path.resolve('src/cli.js'),
+      'schema',
+      'split',
+      'users',
+      '--cwd',
+      cwd,
+    ]),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /SCHEMA_SPLIT_SCHEMA_MJS_REQUIRES_OUT/);
+      return true;
+    },
+  );
+});
+
+test('CLI schema merge writes a schema source with seed from a separate data fixture', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    }
+  }`);
+
+  const { stdout } = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'merge',
+    'users',
+    '--cwd',
+    cwd,
+    '--out',
+    './db/users.merged.schema.json',
+  ]);
+  const merged = JSON.parse(await readFile(path.join(cwd, 'db/users.merged.schema.json'), 'utf8'));
+
+  assert.match(stdout, /Generated db\/users\.merged\.schema\.json/);
+  assert.deepEqual(merged.seed, [{ id: 'u_1', name: 'Ada' }]);
+  assert.equal(merged.fields.name.type, 'string');
+});
+
 test('CLI schema infer --out requires a single resource', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));

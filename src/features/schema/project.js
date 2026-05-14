@@ -40,6 +40,10 @@ export async function loadProjectSchema(config) {
       continue;
     }
 
+    if (rawData !== undefined && rawSchema && Object.prototype.hasOwnProperty.call(rawSchema, 'seed')) {
+      diagnostics.push(mixedModeSchemaSeedDiagnostic(name, dataSource, schemaSource));
+    }
+
     const resource = buildResource({
       name,
       dataPath: dataSource?.sourceFile,
@@ -63,6 +67,22 @@ export async function loadProjectSchema(config) {
     resources,
     diagnostics,
     schema: makeGeneratedSchema(resources, diagnostics),
+  };
+}
+
+function mixedModeSchemaSeedDiagnostic(resource, dataSource, schemaSource) {
+  return {
+    code: 'SCHEMA_SEED_IGNORED_IN_MIXED_MODE',
+    severity: 'warn',
+    resource,
+    file: schemaSource.file,
+    message: `${schemaSource.file} includes seed records, but ${dataSource.file} provides seed data for "${resource}".`,
+    hint: `Remove "seed" from ${schemaSource.file}, or run jsondb schema split ${resource} to keep seed data in a separate fixture.`,
+    details: {
+      resource,
+      schemaFile: schemaSource.file,
+      dataFile: dataSource.file,
+    },
   };
 }
 
