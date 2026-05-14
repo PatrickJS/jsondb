@@ -79,3 +79,4 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 - 2026-05-11 - Bumped `actions/setup-node` from v4 to v6. Commit [d4b23e4](https://github.com/PatrickJS/jsondb/commit/d4b23e4dd614c9367e4dbb512755124384fb5918).
 - 2026-05-11 - Bumped `actions/checkout` from v4 to v6. Commit [7dffcc0](https://github.com/PatrickJS/jsondb/commit/7dffcc0c70d5173fddf07ac23737a22dcabb9e49).
 - 2026-05-11 - Added the initial feature-history changelog. Commit [1611bde](https://github.com/PatrickJS/jsondb/commit/1611bde01d3f972a7bb9cae55e9e3f12bb46f45a).
+- 2026-05-11 - Packaged the changelog with npm releases and recorded the prior changelog entry. Commit [e1ab356](https://github.com/PatrickJS/jsondb/commit/e1ab356ff0fabced22c340cdfa46e419ee268ce5).
