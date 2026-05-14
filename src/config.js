@@ -36,6 +36,9 @@ export const DEFAULT_CONFIG = {
     generatedCount: 5,
   },
   collections: {},
+  resources: {
+    naming: 'basename',
+  },
   server: {
     host: '127.0.0.1',
     port: 7331,

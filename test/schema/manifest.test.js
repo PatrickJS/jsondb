@@ -226,6 +226,41 @@ test('schema manifest customizeField can customize object fields inside arrays',
   assert.equal(blocks.items.fields.chartId.ui.source, 'db/cms/pages.schema.jsonc');
 });
 
+test('schema manifest customizeResource can add resource-level metadata', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    schemaOutFile: './src/generated/jsondb.schema.json',
+    schemaManifest: {
+      customizeResource({ resourceName, file, defaultManifest }) {
+        return {
+          ...defaultManifest,
+          editor: {
+            group: file.startsWith('db/cms/') ? 'CMS' : 'Data',
+            label: resourceName
+          }
+        };
+      }
+    }
+  };`);
+  await mkdir(path.join(cwd, 'db/cms'), { recursive: true });
+  await writeFile(path.join(cwd, 'db/cms/pages.schema.jsonc'), `{
+    "kind": "collection",
+    "fields": {
+      "id": { "type": "string", "required": true }
+    }
+  }\n`, 'utf8');
+
+  const config = await loadConfig({ cwd });
+  await syncJsonFixtureDb(config);
+
+  const manifest = JSON.parse(await readFile(path.join(cwd, 'src/generated/jsondb.schema.json'), 'utf8'));
+
+  assert.deepEqual(manifest.collections.pages.editor, {
+    group: 'CMS',
+    label: 'pages',
+  });
+});
+
 test('schema manifest rejects non-serializable customizeField output with diagnostics', async () => {
   const cwd = await makeProject();
   await writeConfig(cwd, `export default {

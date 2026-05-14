@@ -123,6 +123,7 @@ The defaults are designed to be useful without `jsondb.config.mjs`. When you do 
 | ------------------------------------ | ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Typed, commented config              | No config file required       | [Likely first config](#likely-first-config)                               | Get editor autocomplete and know the common values when you add config. |
 | Fixture folder                       | `./db`                        | [Different fixture folder](#different-fixture-folder)                     | Keep fixtures in a package, example, or app-specific folder.            |
+| Nested resource names                | Fixture basename              | [Nested fixture folders](#nested-fixture-folders)                         | Avoid collisions and control REST/GraphQL names for organized fixtures. |
 | Runtime state behavior               | `.jsondb`, mirror mode        | [Mirror vs source mode](#mirror-vs-source-mode)                           | Keep source fixtures clean, or intentionally write generated ids back.  |
 | Importable generated types           | `.jsondb/types/index.ts`      | [Committed generated types](#committed-generated-types)                   | Let TypeScript imports work in CI and fresh checkouts before sync runs. |
 | Importable schema manifest           | Off                           | [Schema manifest output](#schema-manifest-output)                         | Generate runtime field metadata for model-driven admin/CMS forms.       |
@@ -133,6 +134,7 @@ The defaults are designed to be useful without `jsondb.config.mjs`. When you do 
 | Temporary legacy database shapes      | Off                           | [Database forks](#database-forks)                                         | Run old and new local data contracts from one dev server.               |
 | Host, port, body limit               | `127.0.0.1:7331`, 1 MB bodies | [Server options](#server-options)                                         | Avoid port conflicts or allow larger local payloads.                    |
 | Multiple REST calls in one request   | Available                     | [REST batching](#rest-batching)                                           | Batch local reads and writes through `POST /__jsondb/batch`.            |
+| REST response formats                | JSON                          | [REST formats](#rest-formats)                                             | Render `.json`, `.md`, `.html`, or other GET formats from config.       |
 | Production-ish API starter           | Not generated                 | [Hono and SQLite starter generation](#hono-and-sqlite-starter-generation) | Turn settled fixtures and schemas into a Hono/SQLite starter.           |
 
 ## Likely First Config
@@ -486,6 +488,63 @@ curl -X PATCH http://127.0.0.1:7331/users/u_2 \
 ```bash
 curl -X DELETE http://127.0.0.1:7331/users/u_2
 ```
+
+### REST Formats
+
+Resource `GET` routes return JSON by default. The explicit `.json` extension uses the same shaped data:
+
+```txt
+GET /users
+GET /users.json
+GET /users/u_1
+GET /users/u_1.json
+```
+
+You can override extensionless output with `rest.formats.default`, override `.json` with `rest.formats.json`, and add formats such as `.md` or `.html` from config. Format renderers receive data after normal REST shaping, so `select`, `expand`, `offset`, and `limit` still apply before rendering.
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  rest: {
+    formats: {
+      default: 'json',
+
+      json({ data }) {
+        return {
+          body: JSON.stringify({ data }, null, 2),
+          contentType: 'application/json; charset=utf-8',
+        };
+      },
+
+      md({ resourceName, data }) {
+        return {
+          body: `# ${resourceName}\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n`,
+          contentType: 'text/markdown; charset=utf-8',
+        };
+      },
+
+      html({ data }) {
+        return {
+          body: `<!doctype html><html><body><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></body></html>`,
+          contentType: 'text/html; charset=utf-8',
+        };
+      },
+    },
+  },
+});
+```
+
+With that config:
+
+```txt
+GET /users       -> rest.formats.default, which delegates to json above
+GET /users.json  -> rest.formats.json
+GET /users.md    -> rest.formats.md
+GET /users.html  -> rest.formats.html
+```
+
+Frameworks can hook into `.html` by importing their own server renderer inside `jsondb.config.mjs` and returning the final HTML string. jsondb does not execute `.jsx` routes directly; JSX is a source/runtime choice for your renderer, while `.html` is the response format.
 
 ### Relationship Expansion
 
@@ -877,6 +936,73 @@ That layout creates `pages` and `charts` resources, writes runtime mirrors to `.
 
 This is useful for admin and CMS projects where fixtures often belong near a content domain, but the app still wants simple resource names and routes such as `GET /pages`, `POST /pages`, and `GET /charts`.
 
+If nested folders contain the same basename, configure how paths become resource names:
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  resources: {
+    naming: 'folder-prefixed',
+  },
+});
+```
+
+Naming options:
+
+| Option              | Example path                 | Resource name    | Use when                                                                 |
+| ------------------- | ---------------------------- | ---------------- | ------------------------------------------------------------------------ |
+| `basename`          | `db/cms/pages.json`          | `pages`          | You want the simplest, most stable API and fixture basenames are unique. |
+| `folder-prefixed`   | `db/cms/pages.json`          | `cmsPages`       | Folders are domains and repeated filenames such as `pages.json` are common. |
+| `path`              | `db/cms/landing/pages.json`  | `cmsLandingPages` | Deep folder structure should become part of the API name. Moving files changes API names. |
+| `customizeResource` | `db/marketing/pages.json`    | `landingPages`   | Public API names must be explicit and stable.                            |
+
+Resource names affect every public data surface:
+
+```txt
+db/cms/pages.json       -> cmsPages
+db/marketing/pages.json -> marketingPages
+
+State:
+.jsondb/state/cmsPages.json
+
+REST:
+GET /cms-pages
+GET /cms-pages.json
+
+GraphQL:
+query { cmsPages { id } }
+mutation { createMarketingPage(input: { id: "home" }) { id } }
+
+TypeScript:
+JsonDbCollections["cmsPages"]
+
+Relations:
+{ "relation": { "to": "cmsPages" } }
+```
+
+For hand-picked names, use the same visitor pattern as schema manifest customization:
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  resources: {
+    customizeResource({ file, defaultResource }) {
+      if (file === 'db/cms/pages.json' || file === 'db/cms/pages.schema.jsonc') {
+        return { ...defaultResource, name: 'cmsPages' };
+      }
+
+      if (file === 'db/marketing/pages.json' || file === 'db/marketing/pages.schema.jsonc') {
+        return { ...defaultResource, name: 'marketingPages' };
+      }
+
+      return defaultResource;
+    },
+  },
+});
+```
+
 ### Mirror Vs Source Mode
 
 Use `mode: 'mirror'` when source fixtures should stay unchanged. This is the default and the safest path for local development because writes go to `.jsondb/state`.
@@ -992,55 +1118,53 @@ can generate a committed manifest like this:
 }
 ```
 
-Override or omit field output with `schemaManifest.customizeField`. This hook is intended for app-specific admin/CMS presentation metadata: reusable form components, labels, relation pickers, sections, ordering, readonly policy hints, and fields that should not appear in generated forms.
+Override resource or field output with `schemaManifest.customizeResource` and `schemaManifest.customizeField`. These hooks are intended for app-specific admin/CMS presentation metadata: reusable form components, labels, relation pickers, sections, ordering, readonly policy hints, and fields that should not appear in generated forms. Keep those hints in config or generated manifests; fixture records do not need `ui`, `editor`, or other jsondb-specific properties.
 
 ```js
-import { defineConfig } from 'jsondb/config';
+import { defineConfig, mergeManifest } from 'jsondb/config';
 
 export default defineConfig({
   schemaOutFile: './src/generated/jsondb.schema.json',
   schemaManifest: {
-    customizeField({ resourceName, fieldName, path, file, defaultManifest }) {
-      const baseUi = defaultManifest.ui && typeof defaultManifest.ui === 'object'
-        ? defaultManifest.ui
-        : {};
+    customizeResource({ file, defaultManifest }) {
+      return mergeManifest(defaultManifest, {
+        editor: {
+          group: file?.startsWith('db/cms/') ? 'CMS' : 'Data',
+        },
+      });
+    },
 
+    customizeField({ resourceName, fieldName, path, file, defaultManifest }) {
       if (resourceName !== 'pages') {
         return defaultManifest;
       }
 
       if (path === 'blocks') {
-        return {
-          ...defaultManifest,
-          ui: {
-            ...baseUi,
+        return mergeManifest(defaultManifest, {
+          editor: {
             component: 'block-list',
             source: file,
           },
-        };
+        });
       }
 
       if (fieldName === 'type') {
-        return {
-          ...defaultManifest,
+        return mergeManifest(defaultManifest, {
           values: ['chart', 'metric'],
-          ui: {
-            ...baseUi,
+          editor: {
             component: 'select',
             label: 'Block type',
           },
-        };
+        });
       }
 
       if (fieldName === 'chartId') {
-        return {
-          ...defaultManifest,
-          ui: {
-            ...baseUi,
+        return mergeManifest(defaultManifest, {
+          editor: {
             component: 'relation-select',
             relationTo: 'charts',
           },
-        };
+        });
       }
 
       if (fieldName === 'aggregate' || fieldName === 'format' || fieldName === 'size') {
@@ -1050,24 +1174,20 @@ export default defineConfig({
             ? ['number', 'currency', 'percent']
             : ['small', 'medium', 'large'];
 
-        return {
-          ...defaultManifest,
+        return mergeManifest(defaultManifest, {
           values,
-          ui: {
-            ...baseUi,
+          editor: {
             component: 'select',
           },
-        };
+        });
       }
 
       if (fieldName === 'title' || fieldName === 'description') {
-        return {
-          ...defaultManifest,
-          ui: {
-            ...baseUi,
+        return mergeManifest(defaultManifest, {
+          editor: {
             component: 'textarea',
           },
-        };
+        });
       }
 
       return defaultManifest;

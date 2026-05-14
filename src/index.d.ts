@@ -31,10 +31,61 @@ export type JsonDbSchemaManifestFieldContext = {
   defaultManifest: Record<string, unknown>;
 };
 
+export type JsonDbSchemaManifestResourceContext = {
+  resource: Record<string, unknown>;
+  resourceName: string;
+  file: string | null;
+  sourceFile: string | null;
+  defaultManifest: Record<string, unknown>;
+};
+
 export type JsonDbSchemaManifestOptions = {
+  /** Customize generated resource manifest entries. */
+  customizeResource?: (context: JsonDbSchemaManifestResourceContext) => Record<string, unknown>;
   /** Customize or omit generated field manifest entries. Return null to omit a field. */
   customizeField?: (context: JsonDbSchemaManifestFieldContext) => Record<string, unknown> | null;
 };
+
+export type JsonDbResourceNamingStrategy = 'basename' | 'folder-prefixed' | 'path';
+
+export type JsonDbResourceCustomizeContext = {
+  file: string;
+  sourceFile: string;
+  basename: string;
+  folder: string | null;
+  folders: string[];
+  extension: string;
+  defaultName: string;
+  defaultResource: {
+    name: string;
+  };
+};
+
+export type JsonDbResourceOptions = {
+  /** How fixture paths become resource names. Defaults to "basename". */
+  naming?: JsonDbResourceNamingStrategy;
+  /** Customize fixture path -> resource identity. */
+  customizeResource?: (context: JsonDbResourceCustomizeContext) => { name?: string } | null | undefined;
+};
+
+export type JsonDbRestFormatContext = {
+  db: unknown;
+  resource: Record<string, unknown>;
+  resourceName: string;
+  data: unknown;
+  format: string;
+  request: IncomingMessage | Record<string, unknown>;
+  url: URL;
+};
+
+export type JsonDbRestFormatResult = string | Buffer | {
+  status?: number;
+  body?: string | Buffer;
+  contentType?: string;
+  headers?: Record<string, string>;
+};
+
+export type JsonDbRestFormatRenderer = (context: JsonDbRestFormatContext) => JsonDbRestFormatResult | Promise<JsonDbRestFormatResult>;
 
 export type JsonDbOptions = {
   /** Project root used to resolve relative config paths. Defaults to process.cwd(). */
@@ -86,6 +137,8 @@ export type JsonDbOptions = {
   };
   /** Per-collection overrides such as custom id field names. */
   collections?: Record<string, { idField?: string }>;
+  /** Resource naming and fixture path identity options. */
+  resources?: JsonDbResourceOptions;
   server?: {
     /** Local HTTP host. Defaults to "127.0.0.1". */
     host?: string;
@@ -97,6 +150,8 @@ export type JsonDbOptions = {
   rest?: {
     /** Enable generated REST routes. */
     enabled?: boolean;
+    /** GET response formats by extension. "default" controls extensionless resource routes. */
+    formats?: Record<string, JsonDbRestFormatRenderer | string | undefined>;
   };
   graphql?: {
     /** Enable the focused dependency-free GraphQL endpoint. */
@@ -283,6 +338,16 @@ export function syncJsonFixtureDb(config: JsonDbOptions, options?: { allowErrors
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
 export function generateSchemaManifest(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ manifest: unknown; content: string; outFiles: string[] }>;
 export function renderSchemaManifest(resources: unknown[], config?: JsonDbOptions): unknown;
+export function mergeManifest(base: unknown, patch: unknown): unknown;
+export function resourceNameFromPath(file: string, options?: { strategy?: JsonDbResourceNamingStrategy }): string;
+export function parseFixturePath(file: string): {
+  file: string;
+  folders: string[];
+  folder: string | null;
+  filename: string;
+  basename: string;
+  extension: string;
+};
 export function generateHonoStarter(
   config: JsonDbOptions,
   options?: {

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { syncJsonFixtureDb, loadConfig } from '../../src/index.js';
+import { mergeManifest, resourceNameFromPath } from '../../src/config-public.js';
 import { makeProject, writeConfig } from '../helpers.js';
 
 test('default config adds a small local mock delay range', async () => {
@@ -57,4 +58,40 @@ export default defineConfig({
 
   assert.equal(config.mode, 'mirror');
   assert.deepEqual(config.mock.delay, [75, 250]);
+});
+
+test('resourceNameFromPath derives names from fixture paths', () => {
+  assert.equal(resourceNameFromPath('db/cms/pages.schema.jsonc'), 'pages');
+  assert.equal(resourceNameFromPath('db/cms/pages.schema.jsonc', { strategy: 'folder-prefixed' }), 'cmsPages');
+  assert.equal(resourceNameFromPath('db/cms/landing/pages.json', { strategy: 'path' }), 'cmsLandingPages');
+});
+
+test('mergeManifest deep merges without mutating inputs and replaces arrays', () => {
+  const base = {
+    type: 'enum',
+    values: ['old'],
+    editor: {
+      component: 'select',
+      label: 'Status',
+    },
+  };
+  const patch = {
+    values: ['draft', 'published'],
+    editor: {
+      source: 'db/cms/pages.schema.jsonc',
+      label: undefined,
+    },
+  };
+
+  assert.deepEqual(mergeManifest(base, patch), {
+    type: 'enum',
+    values: ['draft', 'published'],
+    editor: {
+      component: 'select',
+      label: 'Status',
+      source: 'db/cms/pages.schema.jsonc',
+    },
+  });
+  assert.deepEqual(base.values, ['old']);
+  assert.equal(base.editor.source, undefined);
 });

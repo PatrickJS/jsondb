@@ -48,21 +48,61 @@ function outputFiles(config, options) {
 }
 
 function resourceManifest(resource, config, diagnostics) {
-  const manifest = {
+  const defaultManifest = {
     kind: resource.kind,
     name: resource.name,
     fields: renderFieldMap(resource.fields ?? {}, resource, config, diagnostics, ''),
   };
 
   if (resource.description) {
-    manifest.description = resource.description;
+    defaultManifest.description = resource.description;
   }
 
   if (resource.kind === 'collection') {
-    manifest.idField = resource.idField;
+    defaultManifest.idField = resource.idField;
   }
 
-  return manifest;
+  return customizeResourceManifest(resource, config, diagnostics, defaultManifest);
+}
+
+function customizeResourceManifest(resource, config, diagnostics, defaultManifest) {
+  const customizeResource = config.schemaManifest?.customizeResource;
+  const sourceFile = resource.schemaPath ?? resource.dataPath ?? null;
+
+  if (typeof customizeResource !== 'function') {
+    return defaultManifest;
+  }
+
+  let customized;
+  try {
+    customized = customizeResource({
+      resource,
+      resourceName: resource.name,
+      file: sourceFile ? path.relative(config.cwd, sourceFile) : null,
+      sourceFile,
+      defaultManifest: structuredClone(defaultManifest),
+    });
+  } catch (error) {
+    diagnostics.push({
+      code: 'SCHEMA_MANIFEST_RESOURCE_CUSTOMIZE_FAILED',
+      severity: 'error',
+      resource: resource.name,
+      message: `Could not customize schema manifest resource "${resource.name}": ${error.message}`,
+      hint: 'Update schemaManifest.customizeResource so it returns a JSON-serializable resource manifest.',
+      details: {
+        resource: resource.name,
+      },
+    });
+    return defaultManifest;
+  }
+
+  const serializablePath = firstNonSerializablePath(customized);
+  if (serializablePath) {
+    diagnostics.push(nonSerializableResourceDiagnostic(resource, serializablePath));
+    return defaultManifest;
+  }
+
+  return customized;
 }
 
 function renderFieldMap(fields, resource, config, diagnostics, parentPath) {
@@ -356,6 +396,20 @@ function nonSerializableDiagnostic(resource, fieldPath, serializablePath) {
     details: {
       resource: resource.name,
       field: fieldPath,
+      path: serializablePath,
+    },
+  };
+}
+
+function nonSerializableResourceDiagnostic(resource, serializablePath) {
+  return {
+    code: 'SCHEMA_MANIFEST_RESOURCE_NOT_SERIALIZABLE',
+    severity: 'error',
+    resource: resource.name,
+    message: `schemaManifest.customizeResource returned non-serializable output for "${resource.name}" at "${serializablePath}".`,
+    hint: 'Return JSON-serializable values such as strings, numbers, booleans, arrays, plain objects, null, or omit the custom resource hook.',
+    details: {
+      resource: resource.name,
       path: serializablePath,
     },
   };

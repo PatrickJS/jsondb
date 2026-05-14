@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseFixturePath, resourceNameFromPath } from './config-public.js';
 import { parseCsvRecords } from './csv.js';
 import { jsonDbError } from './errors.js';
 import { readText } from './fs-utils.js';
@@ -14,6 +15,8 @@ export async function loadProjectSchema(config) {
   const files = await listSourceFiles(config.sourceDir);
   const dataFiles = new Map();
   const schemaFiles = new Map();
+  const resourceSources = new Map();
+  const diagnostics = [];
 
   for (const filename of files) {
     if (filename.endsWith('.schema.json') || filename.endsWith('.schema.jsonc') || filename.endsWith('.schema.mjs')) {
@@ -25,7 +28,10 @@ export async function loadProjectSchema(config) {
         continue;
       }
 
-      schemaFiles.set(schemaResourceName(filename), path.join(config.sourceDir, filename));
+      const file = sourceFileLabel(config, filename);
+      const name = resolveSourceResourceName(config, filename);
+      trackResourceSource(resourceSources, name, file, 'schema');
+      schemaFiles.set(name, path.join(config.sourceDir, filename));
       continue;
     }
 
@@ -38,13 +44,16 @@ export async function loadProjectSchema(config) {
         continue;
       }
 
-      dataFiles.set(dataResourceName(filename), path.join(config.sourceDir, filename));
+      const file = sourceFileLabel(config, filename);
+      const name = resolveSourceResourceName(config, filename);
+      trackResourceSource(resourceSources, name, file, 'data');
+      dataFiles.set(name, path.join(config.sourceDir, filename));
     }
   }
 
   const resourceNames = [...new Set([...dataFiles.keys(), ...schemaFiles.keys()])].sort();
   const resources = [];
-  const diagnostics = [];
+  diagnostics.push(...duplicateResourceDiagnostics(resourceSources));
 
   for (const name of resourceNames) {
     const dataPath = dataFiles.get(name);
@@ -809,12 +818,75 @@ function schemaSourceFromPath(schemaPath) {
   return 'jsonc';
 }
 
-function dataResourceName(filename) {
-  return path.basename(filename).replace(/\.(jsonc?|csv)$/, '');
+function resolveSourceResourceName(config, filename) {
+  const file = sourceFileLabel(config, filename);
+  const strategy = config.resources?.naming ?? 'basename';
+  const defaultName = resourceNameFromPath(file, { strategy });
+  const defaultResource = { name: defaultName };
+  const customizeResource = config.resources?.customizeResource;
+
+  if (typeof customizeResource !== 'function') {
+    return defaultName;
+  }
+
+  const parsed = parseFixturePath(file);
+  const customized = customizeResource({
+    file,
+    sourceFile: path.join(config.sourceDir, filename),
+    basename: parsed.basename,
+    folder: parsed.folder,
+    folders: parsed.folders,
+    extension: parsed.extension,
+    defaultName,
+    defaultResource,
+  });
+
+  return String(customized?.name ?? defaultName);
 }
 
-function schemaResourceName(filename) {
-  return path.basename(filename).replace(/\.schema\.(json|jsonc|mjs)$/, '');
+function sourceFileLabel(config, filename) {
+  return path.relative(config.cwd, path.join(config.sourceDir, filename)).split(path.sep).join('/');
+}
+
+function trackResourceSource(resourceSources, name, filename, kind) {
+  const sources = resourceSources.get(name) ?? [];
+  sources.push({ filename, kind });
+  resourceSources.set(name, sources);
+}
+
+function duplicateResourceDiagnostics(resourceSources) {
+  const diagnostics = [];
+
+  for (const [name, sources] of resourceSources.entries()) {
+    const dataSources = sources.filter((source) => source.kind === 'data');
+    const schemaSources = sources.filter((source) => source.kind === 'schema');
+    const duplicates = dataSources.length > 1 ? dataSources : schemaSources.length > 1 ? schemaSources : [];
+    if (duplicates.length === 0) {
+      continue;
+    }
+
+    const files = duplicates.map((source) => source.filename.split(path.sep).join('/'));
+    diagnostics.push({
+      code: 'DUPLICATE_RESOURCE_NAME',
+      severity: 'error',
+      resource: name,
+      file: files[0],
+      message: `Duplicate resource name "${name}" from nested fixtures:\n${files.map((file) => `- ${file}`).join('\n')}`,
+      hint: `Rename one fixture, set resources.naming to "folder-prefixed" or "path", or use resources.customizeResource to assign explicit names.`,
+      details: {
+        resource: name,
+        files,
+        apiEffects: [
+          `.jsondb/state/${name}.json`,
+          `REST ${routePathForResource(name)}`,
+          `GraphQL ${name}/${typeNameForResource(name)}`,
+          `JsonDbCollections["${name}"]`,
+        ],
+      },
+    });
+  }
+
+  return diagnostics;
 }
 
 function inferKindFromData(data) {
