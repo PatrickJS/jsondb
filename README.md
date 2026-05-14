@@ -845,6 +845,26 @@ const legacyUsers = await legacyDb.rest.get('/users');
 
 Plugin options include `cwd`, `dbDir`, `stateDir`, `forks`, `apiBase`, `restBasePath`, `graphqlPath`, `rootRoutes`, `clientVirtualModule`, and `clientImport`. Set `rootRoutes: true` only when you intentionally want Vite dev to also answer unscoped routes like `/users`; standalone `jsondb serve` keeps those root REST routes by default.
 
+The plugin watches fixture sources, not generated runtime output. jsondb also skips rewriting generated and state files when their content is unchanged, so normal `sync` or `openJsonFixtureDb()` calls should not trigger Vite reloads by changing mtimes alone.
+
+If your app commits generated jsondb files under its frontend source tree, Vite may still reload when those files genuinely change. You can defensively ignore them in the app's own Vite config when they are type-only or not imported at runtime:
+
+```ts
+export default defineConfig({
+  server: {
+    watch: {
+      ignored: [
+        '../.jsondb/**',
+        'src/generated/jsondb.schema.json',
+        'src/generated/jsondb.generated.ts',
+      ],
+    },
+  },
+});
+```
+
+Only ignore generated files that the browser does not need to hot reload. If app code imports a generated schema or client artifact at runtime, let Vite watch it so real jsondb changes are visible during development.
+
 ## Type Generation
 
 By default, generated TypeScript types are written to:
