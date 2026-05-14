@@ -43,6 +43,7 @@
     "scripts",
     "examples/*/README.md",
     "examples/*/example.json",
+    "examples/*/package.json",
     "examples/*/db/**",
     "examples/*/jsondb.config.mjs",
     "examples/*/src/**",

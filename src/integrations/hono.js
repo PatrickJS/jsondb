@@ -171,10 +171,12 @@ async function runHonoHooks(options, db, resource, method, c, extras = {}) {
     method,
     ...extras,
   };
+  const beforeRequest = options.lifecycleHooks?.beforeRequest;
+  const beforeWrite = isWriteMethod(method) ? options.lifecycleHooks?.beforeWrite : null;
   const globalHook = options.hooks?.[hookName];
   const resourceHook = resourceRestOptions(options, resource)?.hooks?.[hookName];
 
-  for (const hook of [globalHook, resourceHook]) {
+  for (const hook of [beforeRequest, beforeWrite, globalHook, resourceHook]) {
     if (typeof hook !== 'function') {
       continue;
     }
@@ -185,6 +187,13 @@ async function runHonoHooks(options, db, resource, method, c, extras = {}) {
   }
 
   return undefined;
+}
+
+function isWriteMethod(method) {
+  return method === 'create'
+    || method === 'patch'
+    || method === 'put'
+    || method === 'delete';
 }
 
 function methodAllowed(options, resource, method) {

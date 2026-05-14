@@ -1,0 +1,61 @@
+# Hono Auth Example
+
+## What This Teaches
+
+Use this when your app already has a Hono server and you want JSONDB to own the CRUD routes while your app owns auth, permissions, and write normalization.
+
+## Files To Inspect
+
+- `src/app.mjs`: registers JSONDB REST routes with `beforeRequest`, `beforeWrite`, and a pages-specific create hook.
+- `src/server.mjs`: starts the Hono app locally.
+- `db/pages.schema.jsonc`: schema-backed page collection with timestamps set by hooks.
+- `db/users.schema.jsonc`: demo users used by the bearer-token sessions.
+
+## Run It
+
+From this example directory:
+
+```bash
+npm install
+npm run sync
+npm run dev
+```
+
+## Requests To Try
+
+Missing tokens are rejected:
+
+```bash
+curl -i 'http://127.0.0.1:8787/api/pages'
+```
+
+Reader tokens can read:
+
+```bash
+curl -H 'Authorization: Bearer user-token' 'http://127.0.0.1:8787/api/pages'
+```
+
+Reader tokens cannot write:
+
+```bash
+curl -i -X PATCH 'http://127.0.0.1:8787/api/pages/home' \
+  -H 'Authorization: Bearer user-token' \
+  -H 'content-type: application/json' \
+  -d '{"title":"Draft"}'
+```
+
+Admin tokens can write. The shared write hook trims strings and sets `updatedAt`:
+
+```bash
+curl -X PATCH 'http://127.0.0.1:8787/api/pages/home' \
+  -H 'Authorization: Bearer admin-token' \
+  -H 'content-type: application/json' \
+  -d '{"title":"  Homepage  "}'
+```
+
+## Token Map
+
+- `Bearer admin-token`: read and write.
+- `Bearer user-token`: read only.
+
+This is intentionally tiny demo auth. In a real app, `beforeRequest` would read your session or token source, and `beforeWrite` would call your permission policy.

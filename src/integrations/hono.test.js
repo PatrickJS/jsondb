@@ -88,6 +88,177 @@ test('registerRestRoutes supports resource hooks that mutate write bodies', asyn
   });
 });
 
+test('registerRestRoutes runs lifecycle hooks before global and resource hooks', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([]));
+  const db = await openJsonFixtureDb({ cwd });
+  const app = fakeHonoApp();
+  const calls = [];
+
+  registerRestRoutes(app, db, {
+    prefix: '/api',
+    lifecycleHooks: {
+      beforeRequest(ctx) {
+        calls.push(`request:${ctx.method}`);
+      },
+      beforeWrite(ctx) {
+        calls.push(`write:${ctx.method}`);
+        ctx.body.title = ctx.body.title.trim();
+        ctx.body.updatedAt = '2026-05-14T00:00:00.000Z';
+      },
+    },
+    hooks: {
+      beforeCreate(ctx) {
+        calls.push(`global:${ctx.method}`);
+        ctx.body.fromGlobalHook = true;
+      },
+    },
+    resourceOptions: {
+      pages: {
+        hooks: {
+          beforeCreate(ctx) {
+            calls.push(`resource:${ctx.method}`);
+            ctx.body.fromResourceHook = true;
+          },
+        },
+      },
+    },
+  });
+
+  const response = await app.route('POST', '/api/pages').handler(fakeHonoContext({
+    body: {
+      id: 'home',
+      title: '  Home  ',
+    },
+  }));
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(calls, [
+    'request:create',
+    'write:create',
+    'global:create',
+    'resource:create',
+  ]);
+  assert.deepEqual(await db.collection('pages').get('home'), {
+    id: 'home',
+    title: 'Home',
+    updatedAt: '2026-05-14T00:00:00.000Z',
+    fromGlobalHook: true,
+    fromResourceHook: true,
+  });
+});
+
+test('registerRestRoutes only runs beforeWrite for mutating methods', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([{ id: 'home', title: 'Home' }]));
+  const db = await openJsonFixtureDb({ cwd });
+  const app = fakeHonoApp();
+  const calls = [];
+
+  registerRestRoutes(app, db, {
+    prefix: '/api',
+    lifecycleHooks: {
+      beforeRequest(ctx) {
+        calls.push(`request:${ctx.method}`);
+      },
+      beforeWrite(ctx) {
+        calls.push(`write:${ctx.method}`);
+      },
+    },
+  });
+
+  await app.route('GET', '/api/pages').handler(fakeHonoContext());
+  await app.route('GET', '/api/pages/:id').handler(fakeHonoContext({
+    params: {
+      id: 'home',
+    },
+  }));
+  await app.route('PATCH', '/api/pages/:id').handler(fakeHonoContext({
+    params: {
+      id: 'home',
+    },
+    body: {
+      title: 'Homepage',
+    },
+  }));
+
+  assert.deepEqual(calls, [
+    'request:list',
+    'request:get',
+    'request:patch',
+    'write:patch',
+  ]);
+});
+
+test('registerRestRoutes supports beforeRequest short-circuiting', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([]));
+  const db = await openJsonFixtureDb({ cwd });
+  const app = fakeHonoApp();
+  let methodHookCalled = false;
+
+  registerRestRoutes(app, db, {
+    prefix: '/api',
+    lifecycleHooks: {
+      beforeRequest(ctx) {
+        return ctx.c.json({ error: 'Unauthorized' }, 401);
+      },
+    },
+    hooks: {
+      beforeCreate() {
+        methodHookCalled = true;
+      },
+    },
+  });
+
+  const response = await app.route('POST', '/api/pages').handler(fakeHonoContext({
+    body: {
+      id: 'home',
+      title: 'Home',
+    },
+  }));
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(response.body, { error: 'Unauthorized' });
+  assert.equal(methodHookCalled, false);
+  assert.equal(await db.collection('pages').exists('home'), false);
+});
+
+test('registerRestRoutes supports beforeWrite short-circuiting', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([]));
+  const db = await openJsonFixtureDb({ cwd });
+  const app = fakeHonoApp();
+  let methodHookCalled = false;
+
+  registerRestRoutes(app, db, {
+    prefix: '/api',
+    lifecycleHooks: {
+      beforeRequest() {},
+      beforeWrite(ctx) {
+        return ctx.c.json({ error: 'Forbidden' }, 403);
+      },
+    },
+    hooks: {
+      beforeCreate() {
+        methodHookCalled = true;
+      },
+    },
+  });
+
+  const response = await app.route('POST', '/api/pages').handler(fakeHonoContext({
+    body: {
+      id: 'home',
+      title: 'Home',
+    },
+  }));
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(response.body, { error: 'Forbidden' });
+  assert.equal(methodHookCalled, false);
+  assert.equal(await db.collection('pages').exists('home'), false);
+});
+
 function fakeContext() {
   const values = new Map();
   return {

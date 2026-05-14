@@ -1,0 +1,44 @@
+{
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable page id used in routes and links."
+    },
+    "title": {
+      "type": "string",
+      "required": true,
+      "description": "Human-readable page title."
+    },
+    "visibility": {
+      "type": "enum",
+      "values": ["public", "private"],
+      "default": "private",
+      "description": "Whether the page can be shown publicly."
+    },
+    "body": {
+      "type": "string",
+      "description": "Short markdown-like page body for the demo."
+    },
+    "createdAt": {
+      "type": "datetime",
+      "description": "Timestamp assigned by the pages create hook."
+    },
+    "updatedAt": {
+      "type": "datetime",
+      "description": "Timestamp assigned by the shared write hook."
+    }
+  },
+  "seed": [
+    {
+      "id": "home",
+      "title": "Home",
+      "visibility": "public",
+      "body": "Welcome to the JSONDB Hono auth example.",
+      "createdAt": "2026-05-14T00:00:00.000Z",
+      "updatedAt": "2026-05-14T00:00:00.000Z"
+    }
+  ]
+}
