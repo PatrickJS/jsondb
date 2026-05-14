@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
-import { syncJsonFixtureDb, loadConfig } from '../../src/index.js';
+import { setTimeout as delay } from 'node:timers/promises';
+import { openJsonFixtureDb, syncJsonFixtureDb, loadConfig } from '../../src/index.js';
 import { makeProject, writeConfig, writeFixture } from '../helpers.js';
 
 test('data-first fixtures generate schema, types, and runtime state', async () => {
@@ -22,6 +23,44 @@ test('data-first fixtures generate schema, types, and runtime state', async () =
   assert.equal(result.schema.resources.users.kind, 'collection');
   assert.match(await readFile(path.join(cwd, '.jsondb/types/index.ts'), 'utf8'), /export type User =/);
   assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8'))[0].id, 'u_1');
+});
+
+test('openJsonFixtureDb leaves generated files untouched when fixtures are unchanged', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    schemaOutFile: './src/generated/jsondb.schema.json',
+    types: {
+      commitOutFile: './src/generated/jsondb.types.ts'
+    }
+  };`);
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  await openJsonFixtureDb({ cwd });
+
+  const generatedPaths = [
+    '.jsondb/schema.generated.json',
+    '.jsondb/types/index.ts',
+    '.jsondb/state/users.json',
+    '.jsondb/state/.sources.json',
+    'src/generated/jsondb.schema.json',
+    'src/generated/jsondb.types.ts',
+  ].map((filePath) => path.join(cwd, filePath));
+  const before = await fileMtimes(generatedPaths);
+  const metadataBefore = JSON.parse(await readFile(path.join(cwd, '.jsondb/state/.sources.json'), 'utf8'));
+
+  await delay(20);
+  await openJsonFixtureDb({ cwd });
+
+  assert.deepEqual(await fileMtimes(generatedPaths), before);
+  assert.equal(
+    JSON.parse(await readFile(path.join(cwd, '.jsondb/state/.sources.json'), 'utf8')).resources.users.updatedAt,
+    metadataBefore.resources.users.updatedAt,
+  );
 });
 
 test('nested fixture folders are discovered and keep relative source paths', async () => {
@@ -361,6 +400,14 @@ test('non-mirror sync writes generated ids back to JSON fixtures', async () => {
     },
   ]);
 });
+
+async function fileMtimes(filePaths) {
+  const entries = await Promise.all(filePaths.map(async (filePath) => [
+    filePath,
+    (await stat(filePath, { bigint: true })).mtimeNs,
+  ]));
+  return Object.fromEntries(entries);
+}
 
 test('types.commitOutFile writes a committed type copy', async () => {
   const cwd = await makeProject();

@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { applyDefaultsToSeed } from '../sync/defaults.js';
 import { seedForRuntimeState } from '../sync/synthetic-seed.js';
+import { updateSourceMetadataResource } from './source-metadata.js';
 
 const writeQueues = new Map();
 
@@ -60,12 +61,21 @@ export async function readJsonState(filePath, fallback) {
 }
 
 export async function writeJsonState(filePath, value) {
-  await atomicWriteJson(filePath, value);
+  return atomicWriteJson(filePath, value);
 }
 
 export async function atomicWriteJson(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
   const text = `${JSON.stringify(value, null, 2)}\n`;
+  try {
+    if ((await readFile(filePath, 'utf8')) === text) {
+      return false;
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
   const tempPath = path.join(
     path.dirname(filePath),
     `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
@@ -74,6 +84,7 @@ export async function atomicWriteJson(filePath, value) {
   try {
     await writeFile(tempPath, text, 'utf8');
     await rename(tempPath, filePath);
+    return true;
   } catch (error) {
     try {
       await rm(tempPath, { force: true });
@@ -120,14 +131,5 @@ export async function syncJsonResourceState(config, resource, sourceMetadata) {
 }
 
 function updateSourceMetadata(sourceMetadata, config, resource) {
-  if (!resource.dataHash) {
-    return;
-  }
-
-  sourceMetadata.resources[resource.name] = {
-    path: path.relative(config.cwd, resource.dataPath),
-    format: resource.dataFormat,
-    hash: resource.dataHash,
-    updatedAt: new Date().toISOString(),
-  };
+  updateSourceMetadataResource(sourceMetadata, config, resource);
 }
