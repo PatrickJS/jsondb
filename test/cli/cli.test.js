@@ -211,6 +211,39 @@ test('CLI schema unbundle accepts semantically matching seed output', async () =
   ]);
 });
 
+test('CLI schema unbundle --schema-out and --seed-out write relative to --cwd', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [{ "id": "u_1", "name": "Ada" }]
+  }`);
+
+  const { stdout } = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'unbundle',
+    'users',
+    '--cwd',
+    cwd,
+    '--schema-out',
+    './generated/users.schema.json',
+    '--seed-out',
+    './fixtures/users.json',
+  ]);
+  const schema = JSON.parse(await readFile(path.join(cwd, 'generated/users.schema.json'), 'utf8'));
+  const seed = JSON.parse(await readFile(path.join(cwd, 'fixtures/users.json'), 'utf8'));
+
+  assert.match(stdout, /Generated fixtures\/users\.json/);
+  assert.match(stdout, /Generated generated\/users\.schema\.json/);
+  assert.equal(schema.seed, undefined);
+  assert.deepEqual(seed, [{ id: 'u_1', name: 'Ada' }]);
+});
+
 test('CLI schema unbundle force overwrites a different seed output', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.jsonc', `{
