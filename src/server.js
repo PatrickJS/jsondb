@@ -5,7 +5,7 @@ import path from 'node:path';
 import { openJsonFixtureDb } from './db.js';
 import { serializeError } from './errors.js';
 import { loadForkDb } from './features/config/forks.js';
-import { handleGraphqlRequest } from './graphql/http.js';
+import { defaultHttpFeatureRegistry } from './features/http/registry.js';
 import { runMockBehavior } from './mock.js';
 import { handleRestRequest, sendJson } from './rest/handler.js';
 import { syncJsonFixtureDb } from './sync.js';
@@ -97,9 +97,14 @@ async function handleRequest(db, request, response, events, routes) {
     return true;
   }
 
+  const httpFeatures = defaultHttpFeatureRegistry();
+  if (await httpFeatures.handle({ db, request, response, url, routes }, { phase: 'preMock' })) {
+    return true;
+  }
+
   const restUrl = restUrlForRequest(url, routes);
-  const handlesGraphql = db.config.graphql?.enabled !== false && url.pathname === routes.graphqlPath;
-  if (!restUrl && !handlesGraphql) {
+  const handlesRegisteredFeature = httpFeatures.matches({ db, request, response, url, routes }, { phase: 'postMock' });
+  if (!restUrl && !handlesRegisteredFeature) {
     return false;
   }
 
@@ -109,8 +114,7 @@ async function handleRequest(db, request, response, events, routes) {
     return true;
   }
 
-  if (handlesGraphql) {
-    await handleGraphqlRequest(db, request, response);
+  if (await httpFeatures.handle({ db, request, response, url, routes }, { phase: 'postMock' })) {
     return true;
   }
 
@@ -301,6 +305,7 @@ function resolveRequestRoutes(config, options) {
     batchPath: `${apiBase}/batch`,
     importPath: `${apiBase}/import`,
     eventsPath: `${apiBase}/events`,
+    logPath: `${apiBase}/log`,
   };
 }
 

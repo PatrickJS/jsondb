@@ -1,17 +1,18 @@
 import { jsonDbError } from '../../errors.js';
 import { assertRecordMatchesResource, validateUniqueCollectionFields } from '../../schema.js';
 import { applyDefaultsToRecord } from '../../sync.js';
-import { readJsonState, statePathForResource, withJsonStateWrite, writeJsonState } from './state.js';
+import { createRuntime } from '../storage/runtime.js';
 
 export class JsonDbCollection {
-  constructor(config, resource) {
-    this.config = config;
+  constructor(db, resource) {
+    this.db = normalizeDb(db, resource);
+    this.config = this.db.config;
     this.resource = resource;
-    this.path = statePathForResource(config, resource.name);
+    this.path = this.db.runtime.adapterFor(resource).statePath?.(resource);
   }
 
   async all() {
-    return readJsonState(this.path, []);
+    return this.adapter().readResource(this.resource, []);
   }
 
   async get(id) {
@@ -20,7 +21,7 @@ export class JsonDbCollection {
   }
 
   async create(record) {
-    return withJsonStateWrite(this.path, async () => {
+    return this.adapter().withResourceWrite(this.resource, async () => {
       const records = await this.all();
       const nextRecord = this.config.defaults?.applyOnCreate === false
         ? { ...record }
@@ -53,14 +54,15 @@ export class JsonDbCollection {
       }
 
       assertUniqueCollectionRecords([...records, nextRecord], this.resource);
-      records.push(nextRecord);
-      await writeJsonState(this.path, records);
+      const nextRecords = [...records, nextRecord];
+      await this.adapter().writeResource(this.resource, nextRecords);
+      this.emit('create', { id });
       return nextRecord;
     });
   }
 
   async update(id, patch) {
-    return withJsonStateWrite(this.path, async () => {
+    return this.adapter().withResourceWrite(this.resource, async () => {
       const records = await this.all();
       const index = records.findIndex((record) => idMatches(record?.[this.resource.idField], id));
       if (index === -1) {
@@ -81,7 +83,8 @@ export class JsonDbCollection {
         source: `${this.resource.name} patch body`,
       });
       assertUniqueCollectionRecords(nextRecords, this.resource);
-      await writeJsonState(this.path, nextRecords);
+      await this.adapter().writeResource(this.resource, nextRecords);
+      this.emit('update', { id: existingId });
       return nextRecords[index];
     });
   }
@@ -91,13 +94,42 @@ export class JsonDbCollection {
   }
 
   async delete(id) {
-    return withJsonStateWrite(this.path, async () => {
+    return this.adapter().withResourceWrite(this.resource, async () => {
       const records = await this.all();
       const nextRecords = records.filter((record) => !idMatches(record?.[this.resource.idField], id));
-      await writeJsonState(this.path, nextRecords);
-      return nextRecords.length !== records.length;
+      const deleted = nextRecords.length !== records.length;
+      await this.adapter().writeResource(this.resource, nextRecords);
+      if (deleted) {
+        this.emit('delete', { id });
+      }
+      return deleted;
     });
   }
+
+  adapter() {
+    return this.db.runtime.adapterFor(this.resource);
+  }
+
+  emit(op, details = {}) {
+    this.db.runtime.emit({
+      resource: this.resource.name,
+      kind: 'collection',
+      op,
+      ...details,
+    });
+  }
+}
+
+function normalizeDb(db, resource) {
+  if (db?.runtime && db?.config) {
+    return db;
+  }
+  const config = db;
+  const runtime = createRuntime(config, [resource]);
+  return {
+    config,
+    runtime,
+  };
 }
 
 function assertUniqueCollectionRecords(records, resource) {
