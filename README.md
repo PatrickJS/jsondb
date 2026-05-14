@@ -940,7 +940,7 @@ app.route('/api', await createJsonDbHonoApp({
 }));
 ```
 
-Apps that already own their Hono instance can register only the REST routes and wrap them with hooks:
+Apps that already own their Hono instance can register only the REST routes and wrap them with hooks. Use lifecycle hooks for cross-cutting behavior such as auth/session loading and shared write policy, then keep method or resource hooks for resource-specific rules:
 
 ```ts
 import { registerRestRoutes } from 'jsondb/hono';
@@ -948,14 +948,35 @@ import { registerRestRoutes } from 'jsondb/hono';
 registerRestRoutes(app, db, {
   prefix: '/api',
   resources: ['pages', 'charts'],
+  lifecycleHooks: {
+    beforeRequest({ c }) {
+      const session = readSession(c.req.header('authorization'));
+      if (!session) return c.json({ error: 'Unauthorized' }, 401);
+      c.set('session', session);
+    },
+    beforeWrite({ c, body }) {
+      if (c.get('session')?.role !== 'admin') {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      if (body) body.updatedAt = new Date().toISOString();
+    },
+  },
   hooks: {
-    beforeCreate({ c }) {
-      // Return a Hono response to short-circuit auth or permission checks.
-      if (!c.get('session')) return c.json({ error: 'Unauthorized' }, 401);
+    beforeCreate({ body }) {
+      body.createdAt ??= body.updatedAt;
     },
   },
 });
 ```
+
+Hook order is deterministic: `beforeRequest`, `beforeWrite` for `create`/`patch`/`put`/`delete`, the matching global method hook, the matching resource method hook, then the JSONDB operation. Any hook can return a Hono response to short-circuit the request, and write hooks can mutate `body` before JSONDB validates and writes it.
+
+See `examples/hono-auth` for a runnable Hono app with bearer-token auth:
+
+- `Bearer user-token` can read.
+- `Bearer admin-token` can read and write.
+- missing or invalid tokens return `401`.
+- non-admin writes return `403`.
 
 ## Configuration Details
 

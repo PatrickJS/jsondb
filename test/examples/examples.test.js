@@ -16,6 +16,7 @@ test('examples launcher can discover repo examples and render an index page', as
     'csv',
     'data-first',
     'diagnostics',
+    'hono-auth',
     'relations',
     'rest-client',
     'schema-first',
@@ -36,6 +37,7 @@ test('examples launcher can discover repo examples and render an index page', as
   assert.match(html, /advanced/);
   assert.match(html, /csv/);
   assert.match(html, /diagnostics/);
+  assert.match(html, /Hono Auth/);
   assert.match(html, /REST Client/);
   assert.match(html, /client/);
   assert.match(html, /relations/);
@@ -45,6 +47,7 @@ test('examples launcher can discover repo examples and render an index page', as
 
 test('new onboarding examples sync expected resources', async () => {
   const expected = {
+    'hono-auth': ['pages', 'users'],
     'rest-client': ['settings', 'users'],
     relations: ['posts', 'users'],
     'schema-manifest': ['projects', 'users'],
@@ -62,6 +65,17 @@ test('new onboarding examples sync expected resources', async () => {
   const manifest = JSON.parse(await readFile(path.join(manifestCwd, 'src/generated/jsondb.schema.json'), 'utf8'));
   assert.equal(manifest.collections.projects.fields.status.ui.component, 'segmented-control');
   assert.equal(manifest.collections.users.fields.bio.ui.component, 'markdown');
+});
+
+test('hono auth example shows lifecycle hook integration code', async () => {
+  const source = await readFile(path.resolve('examples/hono-auth/src/app.mjs'), 'utf8');
+
+  assert.match(source, /registerRestRoutes/);
+  assert.match(source, /lifecycleHooks/);
+  assert.match(source, /beforeRequest/);
+  assert.match(source, /beforeWrite/);
+  assert.match(source, /Bearer admin-token/);
+  assert.match(source, /Bearer user-token/);
 });
 
 async function copyExampleProject(name) {

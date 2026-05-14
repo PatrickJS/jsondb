@@ -33,6 +33,11 @@ export type JsonDbHonoRestHooks = {
   beforePut?: JsonDbHonoRestHook;
 };
 
+export type JsonDbHonoRestLifecycleHooks = {
+  beforeRequest?: JsonDbHonoRestHook;
+  beforeWrite?: JsonDbHonoRestHook;
+};
+
 export type JsonDbHonoRestResourceOptions = false | {
   methods?: JsonDbHonoRestMethod[];
   hooks?: JsonDbHonoRestHooks;
@@ -44,6 +49,7 @@ export type JsonDbHonoRestRoutesOptions = {
   exclude?: string[];
   methods?: JsonDbHonoRestMethod[];
   hooks?: JsonDbHonoRestHooks;
+  lifecycleHooks?: JsonDbHonoRestLifecycleHooks;
   resourceOptions?: Record<string, JsonDbHonoRestResourceOptions>;
 };
 
