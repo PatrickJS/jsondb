@@ -31,6 +31,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 - 2026-05-07 - Added the HTTP client, automatic and direct batching, example projects, built-in viewer, and mock behavior tests. Commit [d8373b1](https://github.com/PatrickJS/jsondb/commit/d8373b16bf3b7d7aa7f1155b406b7082809c672c).
 - 2026-05-07 - Added live reload, generated collection ids, source diagnostics, and viewer updates for broken source files. Commit [7e4cce7](https://github.com/PatrickJS/jsondb/commit/7e4cce7d9abc57cb68464add8aac0c8da5b14e2a).
 - 2026-05-14 - Expanded the example catalog with metadata, richer READMEs, relations, REST client, and schema-manifest examples, plus a metadata-driven examples index. Commit [0b4d31e](https://github.com/PatrickJS/jsondb/commit/0b4d31e9329121a4e6c419451774e908360a021f).
+- 2026-05-14 - Added the Hono auth example showing bearer-token auth, permission checks, lifecycle hooks, and write normalization. Commit [bbad836](https://github.com/PatrickJS/jsondb/commit/bbad8360b4524e43f6ddddbef823cb6693a41248).
 
 ### CSV Fixtures and Import
 
@@ -45,6 +46,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 - 2026-05-14 - Added recursive nested fixture discovery, basename-derived resource names, recursive source watching, and nested schema-manifest context. Commit [27b3125](https://github.com/PatrickJS/jsondb/commit/27b3125047906b90a156594e5be29e88ff37f1ba).
 - 2026-05-14 - Added the custom source readers pipeline for user-defined formats, built-in reader normalization, source hashes, and structured reader diagnostics. Commit [53604b9](https://github.com/PatrickJS/jsondb/commit/53604b93e162b4063655cdd49834ed6295cb5991).
 - 2026-05-14 - Added `jsondb schema infer`, doctor guidance for adding or removing schemas, and discriminated object variants in inference, validation, manifests, and generated TypeScript types. Commits [9586d5f](https://github.com/PatrickJS/jsondb/commit/9586d5f2e1fc6211fe9cb2b2ba9b8f5e7bcfaabe) and [0d9bf62](https://github.com/PatrickJS/jsondb/commit/0d9bf62efc1259ea51fe043725d9a0b134b5ad38).
+- 2026-05-14 - Added `jsondb schema bundle` / `unbundle` for moving inline seeds between schema and data fixtures, with mixed-mode warnings, safe output handling, overwrite controls, empty-seed support, and `--cwd`-relative output paths. Commits [f57a9cc](https://github.com/PatrickJS/jsondb/commit/f57a9ccb0d28d285ce208367b4291efa3aed2806), [c0cb2fa](https://github.com/PatrickJS/jsondb/commit/c0cb2fa2cf099dd51bf0f98358cb6fd288a28ae0), [e9618ec](https://github.com/PatrickJS/jsondb/commit/e9618ecb5e7e45e0c75f960edec96441043801f1), and [353c861](https://github.com/PatrickJS/jsondb/commit/353c861d085b7a58edf33ef379103a866aeb9f39).
 
 ### Configuration
 
@@ -87,6 +89,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 - 2026-05-07 - Added the Hono and SQLite starter generator, optional Hono integration, optional SQLite adapter, generation CLI, and related tests. Commit [4e4770e](https://github.com/PatrickJS/jsondb/commit/4e4770e71eb376a524562c2a739c2a41bc40b9ac).
 - 2026-05-14 - Reused the opened Hono database promise in `jsonDbContext` so middleware calls share one opened database instance. Commit [434c7b6](https://github.com/PatrickJS/jsondb/commit/434c7b6be48320ff6d495f116a21a210d22b8f8b).
 - 2026-05-14 - Added `registerRestRoutes` for Hono with route prefixes, resource include/exclude controls, method filters, global hooks, per-resource hooks, and short-circuiting. Commits [9586d5f](https://github.com/PatrickJS/jsondb/commit/9586d5f2e1fc6211fe9cb2b2ba9b8f5e7bcfaabe) and [0d9bf62](https://github.com/PatrickJS/jsondb/commit/0d9bf62efc1259ea51fe043725d9a0b134b5ad38).
+- 2026-05-14 - Added Hono REST lifecycle hooks with `beforeRequest` and write-only `beforeWrite` handling, including hook ordering and short-circuit support. Commit [bbad836](https://github.com/PatrickJS/jsondb/commit/bbad8360b4524e43f6ddddbef823cb6693a41248).
 
 ### Maintenance
 
