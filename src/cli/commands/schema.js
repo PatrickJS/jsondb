@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { jsonDbError, listChoices } from '../../errors.js';
-import { writeText } from '../../fs-utils.js';
+import { readText, writeText } from '../../fs-utils.js';
 import { resolveResource } from '../../names.js';
 import { loadProjectSchema } from '../../schema.js';
 import { generateSchemaManifest } from '../../schema-manifest.js';
@@ -115,13 +115,20 @@ async function runSchemaUnbundle(config, project, args) {
 
   const schemaOutFile = explicitSchemaOutFile ?? defaultSchemaOutFile(config, resource);
   const explicitSeedOutFile = outputPath(config, valueAfter(args, '--seed-out'));
-  const shouldWriteSeed = explicitSeedOutFile !== undefined || !resource.dataPath;
+  const force = hasFlag(args, '--force');
+  const includeEmptySeed = hasFlag(args, '--empty-seed');
+  const shouldWriteSeed = (explicitSeedOutFile !== undefined || !resource.dataPath)
+    && (includeEmptySeed || !isEmptySeed(resource.seed, resource.kind));
   const seedOutFile = explicitSeedOutFile ?? defaultSeedOutFile(config, resource);
   const generated = [];
 
   if (shouldWriteSeed) {
-    await writeText(seedOutFile, `${JSON.stringify(resource.seed, null, 2)}\n`);
+    await writeOutput(seedOutFile, `${JSON.stringify(resource.seed, null, 2)}\n`, config, { force });
     generated.push(seedOutFile);
+  }
+
+  if (!explicitSchemaOutFile && resource.schemaPath?.endsWith('.schema.jsonc')) {
+    console.error(`warn: schema unbundle rewrites ${path.relative(config.cwd, schemaOutFile)} without preserving JSONC comments.`);
   }
 
   await writeText(schemaOutFile, `${JSON.stringify(schemaSourceForResource(resource), null, 2)}\n`);
@@ -139,7 +146,7 @@ async function runSchemaBundle(config, project, args) {
       'SCHEMA_BUNDLE_REQUIRES_RESOURCE',
       'SCHEMA_BUNDLE_REQUIRES_RESOURCE: schema bundle requires a resource name.',
       {
-        hint: 'Use jsondb schema bundle users --out db/users.bundle.schema.json.',
+        hint: 'Use jsondb schema bundle users --out artifacts/users.bundle.schema.json.',
       },
     );
   }
@@ -152,7 +159,18 @@ async function runSchemaBundle(config, project, args) {
     return;
   }
 
-  await writeText(outFile, content);
+  const force = hasFlag(args, '--force');
+  if (isInsidePath(config.sourceDir, outFile) && !force) {
+    throw jsonDbError(
+      'SCHEMA_BUNDLE_LIVE_OUTPUT_REQUIRES_FORCE',
+      `SCHEMA_BUNDLE_LIVE_OUTPUT_REQUIRES_FORCE: schema bundle output ${path.relative(config.cwd, outFile)} is inside the active fixture directory.`,
+      {
+        hint: 'Write bundled schema artifacts outside db/, or pass --force if you intentionally want a live bundled schema source.',
+      },
+    );
+  }
+
+  await writeOutput(outFile, content, config, { force });
   console.log(`Generated ${path.relative(config.cwd, outFile)}`);
 }
 
@@ -247,6 +265,70 @@ function defaultSchemaOutFile(config, resource) {
 
 function defaultSeedOutFile(config, resource) {
   return resource.dataPath ?? path.join(config.sourceDir, `${resource.name}.json`);
+}
+
+async function writeOutput(filePath, content, config, options = {}) {
+  if (!options.force) {
+    try {
+      const existing = await readText(filePath);
+      if (!contentMatches(existing, content)) {
+        throw jsonDbError(
+          'SCHEMA_OUTPUT_EXISTS',
+          `SCHEMA_OUTPUT_EXISTS: ${path.relative(config.cwd, filePath)} already exists with different content.`,
+          {
+            hint: 'Review the existing file, choose a different output path, or pass --force to overwrite it.',
+          },
+        );
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
+  await writeText(filePath, content);
+}
+
+function contentMatches(existing, next) {
+  if (existing === next) {
+    return true;
+  }
+
+  try {
+    return stableJsonStringify(JSON.parse(existing)) === stableJsonStringify(JSON.parse(next));
+  } catch {
+    return false;
+  }
+}
+
+function stableJsonStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJsonStringify(item)).join(',')}]`;
+  }
+
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJsonStringify(value[key])}`).join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function isEmptySeed(seed, kind) {
+  if (kind === 'collection') {
+    return Array.isArray(seed) && seed.length === 0;
+  }
+
+  return seed && typeof seed === 'object' && !Array.isArray(seed) && Object.keys(seed).length === 0;
+}
+
+function isInsidePath(parent, child) {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function hasFlag(args, flag) {
+  return args.includes(flag);
 }
 
 function positionalArgs(args) {

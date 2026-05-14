@@ -158,6 +158,17 @@ users.json controls the seed records
 If the schema file also contains `seed`, that embedded seed is ignored in favor of
 the data fixture. The CLI should warn and suggest unbundling the seed from the
 schema source so mixed mode keeps contracts and seed records in separate files.
+`jsondb schema unbundle users` removes embedded seed from the schema source and
+writes non-empty seed data to `db/users.json`. Empty schema-only seed is removed
+without creating an empty fixture unless `--empty-seed` is passed. In-place JSONC
+rewrites may lose comments, so the CLI should warn when it rewrites `.schema.jsonc`
+without `--schema-out`.
+
+`jsondb schema bundle users` creates a portable schema-plus-seed artifact. Bundled
+outputs should live outside the active fixture directory by default, such as
+`artifacts/users.bundle.schema.json`, so they are not rediscovered as live schema
+sources. Writing a bundle inside `db/` requires `--force`. Overwriting an existing
+different seed or bundle output also requires `--force`.
 
 If the two disagree, the CLI reports the mismatch:
 
@@ -1218,7 +1229,7 @@ jsondb types --out ./src/generated/jsondb.types.ts
 jsondb schema
 jsondb schema validate
 jsondb schema unbundle users
-jsondb schema bundle users --out db/users.bundle.schema.json
+jsondb schema bundle users --out artifacts/users.bundle.schema.json
 jsondb generate hono
 jsondb generate hono --api rest,graphql --out ./server
 jsondb generate hono --api none --app module

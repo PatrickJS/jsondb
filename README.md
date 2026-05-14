@@ -262,6 +262,8 @@ db/users.schema.json
 db/users.json
 ```
 
+If a schema file still contains embedded `seed` while a data fixture exists, jsondb ignores the embedded seed and warns. Use `jsondb schema unbundle users` to move non-empty seed data into a fixture and keep the schema source contract-only. Use `jsondb schema bundle users --out artifacts/users.bundle.schema.json` when you need a portable schema-plus-seed artifact; bundled outputs should stay outside `db/` unless you intentionally pass `--force`.
+
 By default, unknown fields produce warnings for local development. Use [schema strictness](#schema-strictness) when you want drift to fail.
 
 Schema fields can use `nullable: true` when `null` is an intentional value. `datetime` fields validate as strings and generate TypeScript `string` types. Object fields can set `additionalProperties: true` when nested keys are intentionally flexible.

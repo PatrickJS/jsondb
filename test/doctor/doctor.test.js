@@ -151,6 +151,33 @@ test('doctor keeps schema removal quiet when schema contains non-inferable contr
   assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_SCHEMA_MATCHES_INFERENCE'), false);
 });
 
+test('doctor suggests unbundling ignored schema seed in mixed mode', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [{ "id": "u_schema", "name": "Ignored" }]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+  const finding = result.findings.find((candidate) => candidate.code === 'SCHEMA_SEED_IGNORED_IN_MIXED_MODE');
+
+  assert.equal(finding.severity, 'warn');
+  assert.equal(finding.resource, 'users');
+  assert.match(finding.hint, /jsondb schema unbundle users/);
+});
+
 test('doctor validates configured fork folders', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
