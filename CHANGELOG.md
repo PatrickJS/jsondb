@@ -3,8 +3,9 @@
 This project does not have versioned releases yet. Until releases start, this file
 tracks the repository history by feature area from the first commit onward.
 
-Dates are commit dates from the git history. Commit links point at the canonical
-GitHub repository: <https://github.com/PatrickJS/jsondb>.
+Dates are commit dates from the git history. Changelog-only maintenance commits
+are omitted. Commit links point at the canonical GitHub repository:
+<https://github.com/PatrickJS/jsondb>.
 
 ## Feature History
 
@@ -22,6 +23,7 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 - 2026-05-11 - Renamed the package-facing API to `jsondb` and added an embeddable request handler for mounting jsondb into other servers. Commit [0b7f9d5](https://github.com/PatrickJS/jsondb/commit/0b7f9d51519f9f14fb8e9d97abb90a5ea062a96a).
 - 2026-05-14 - Added pluggable runtimes, runtime write events, an HTTP feature registry, and a `/__jsondb/log` server-sent event stream. Commit [69337fa](https://github.com/PatrickJS/jsondb/commit/69337fa347fa20f6186f5afd70d95fb766c561ea).
 - 2026-05-14 - Added the `source` runtime for reading and writing source-backed JSON fixtures, with source metadata hydration and dot-folder ignoring. Commit [80ecfff](https://github.com/PatrickJS/jsondb/commit/80ecfffcd8c969902f9552e0b421ff8adc9c7e96).
+- 2026-05-14 - Avoided redundant disk writes by skipping unchanged output, preserving generated metadata, and centralizing source metadata updates. Commits [9ec39b1](https://github.com/PatrickJS/jsondb/commit/9ec39b11e0a93de72e6b62d3187a379aaccc4ede) and [c14e799](https://github.com/PatrickJS/jsondb/commit/c14e79933091f54a4ce98d9a7eb9e6c10ffd8085).
 
 ### Client, Viewer, Examples, and Mocking
 
@@ -66,6 +68,7 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 ### Vite Integration
 
 - 2026-05-11 - Added the dependency-light Vite dev-server plugin, scoped `/__jsondb` routes, optional root REST routes, and the `virtual:jsondb/client` module. Commit [d9f7c70](https://github.com/PatrickJS/jsondb/commit/d9f7c7026d943a78ddf64688173e3c00089c6287).
+- 2026-05-14 - Documented Vite watch behavior, generated artifact ignores, and guidance for avoiding unnecessary reloads while keeping runtime imports visible. Commit [8e0c2a3](https://github.com/PatrickJS/jsondb/commit/8e0c2a3d9a35a64fa7676b3071a512d519e78dcf).
 
 ### Database Forks
 
@@ -80,19 +83,17 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 ### Hono and SQLite Graduation Path
 
 - 2026-05-07 - Added the Hono and SQLite starter generator, optional Hono integration, optional SQLite adapter, generation CLI, and related tests. Commit [4e4770e](https://github.com/PatrickJS/jsondb/commit/4e4770e71eb376a524562c2a739c2a41bc40b9ac).
+- 2026-05-14 - Reused the opened Hono database promise in `jsonDbContext` so middleware calls share one opened database instance. Commit [434c7b6](https://github.com/PatrickJS/jsondb/commit/434c7b6be48320ff6d495f116a21a210d22b8f8b).
 
 ### Maintenance
 
 - 2026-05-07 - Ignored the temporary folder in git. Commit [ad4e52a](https://github.com/PatrickJS/jsondb/commit/ad4e52aac9ba2dc39eb320ec4262d660dfb7f2c3).
 - 2026-05-11 - Bumped `actions/setup-node` from v4 to v6. Commit [d4b23e4](https://github.com/PatrickJS/jsondb/commit/d4b23e4dd614c9367e4dbb512755124384fb5918).
 - 2026-05-11 - Bumped `actions/checkout` from v4 to v6. Commit [7dffcc0](https://github.com/PatrickJS/jsondb/commit/7dffcc0c70d5173fddf07ac23737a22dcabb9e49).
-- 2026-05-11 - Added the initial feature-history changelog. Commit [1611bde](https://github.com/PatrickJS/jsondb/commit/1611bde01d3f972a7bb9cae55e9e3f12bb46f45a).
-- 2026-05-11 - Packaged the changelog with npm releases and recorded the prior changelog entry. Commit [e1ab356](https://github.com/PatrickJS/jsondb/commit/e1ab356ff0fabced22c340cdfa46e419ee268ce5).
 - 2026-05-14 - Split the monolithic test suite into focused test files for CLI, config, doctor, package, runtime, schema, sync, and examples coverage. Commit [e8e4e8e](https://github.com/PatrickJS/jsondb/commit/e8e4e8e208b90707e664a9717a474b7cc8bec4fd).
 - 2026-05-14 - Extracted schema logic into feature modules for fields, generated metadata, project loading, relations, resources, sources, and validation. Commit [4503af8](https://github.com/PatrickJS/jsondb/commit/4503af8a19b6f6e1296347a90183c4eb93eef8c6).
 - 2026-05-14 - Modularized the CLI, runtime, config, doctor, sync, integration, and generator code into feature and shared namespaces while preserving compatibility exports. Commit [d7de49b](https://github.com/PatrickJS/jsondb/commit/d7de49b66fa3f59e8dcaf4905edd73920cbc80a4).
-- 2026-05-14 - Added the npm-packaged changelog entry for commit `e1ab356`. Commit [663035f](https://github.com/PatrickJS/jsondb/commit/663035ffb4f6548a5b7637d28f2f06f2fdc86a9a).
 - 2026-05-14 - Merged upstream `main` after the May 14 feature, refactor, and changelog updates. Commit [58ac729](https://github.com/PatrickJS/jsondb/commit/58ac729c7edf56da65512f2bd2e7181f1d7ff7f3).
-- 2026-05-14 - Updated the changelog with the May 14 feature, refactor, packaging, and merge history. Commit [f38bdaa](https://github.com/PatrickJS/jsondb/commit/f38bdaa96248fd515d0518ea43a39c2f6d03a4c4).
-- 2026-05-14 - Updated the changelog with resource alias resolution and previous changelog history. Commit [a682d13](https://github.com/PatrickJS/jsondb/commit/a682d13a4753eef6f09e9c9fb54921cb3f3a789e).
 - 2026-05-14 - Added architecture documentation, README and agent-guide cross-references, package globs for example metadata/source files, and command-specific CLI help handling. Commit [0b4d31e](https://github.com/PatrickJS/jsondb/commit/0b4d31e9329121a4e6c419451774e908360a021f).
+- 2026-05-14 - Printed subcommand help before loading project config, with focused help for `types`, `schema`, `doctor`, `serve`, and `generate`. Commit [0ba1c13](https://github.com/PatrickJS/jsondb/commit/0ba1c13e9e3a4b4d35e5618fc94a7db3acfdfb9c).
+- 2026-05-14 - Merged upstream `main` after the redundant-write and metadata preservation work. Commit [d15b30c](https://github.com/PatrickJS/jsondb/commit/d15b30c938ee216e9765ca6ef8fecafa664d6e32).
