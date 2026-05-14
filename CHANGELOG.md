@@ -27,6 +27,7 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 
 - 2026-05-07 - Added the HTTP client, automatic and direct batching, example projects, built-in viewer, and mock behavior tests. Commit [d8373b1](https://github.com/PatrickJS/jsondb/commit/d8373b16bf3b7d7aa7f1155b406b7082809c672c).
 - 2026-05-07 - Added live reload, generated collection ids, source diagnostics, and viewer updates for broken source files. Commit [7e4cce7](https://github.com/PatrickJS/jsondb/commit/7e4cce7d9abc57cb68464add8aac0c8da5b14e2a).
+- 2026-05-14 - Expanded the example catalog with metadata, richer READMEs, relations, REST client, and schema-manifest examples, plus a metadata-driven examples index. Commit [0b4d31e](https://github.com/PatrickJS/jsondb/commit/0b4d31e9329121a4e6c419451774e908360a021f).
 
 ### CSV Fixtures and Import
 
@@ -93,3 +94,5 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 - 2026-05-14 - Added the npm-packaged changelog entry for commit `e1ab356`. Commit [663035f](https://github.com/PatrickJS/jsondb/commit/663035ffb4f6548a5b7637d28f2f06f2fdc86a9a).
 - 2026-05-14 - Merged upstream `main` after the May 14 feature, refactor, and changelog updates. Commit [58ac729](https://github.com/PatrickJS/jsondb/commit/58ac729c7edf56da65512f2bd2e7181f1d7ff7f3).
 - 2026-05-14 - Updated the changelog with the May 14 feature, refactor, packaging, and merge history. Commit [f38bdaa](https://github.com/PatrickJS/jsondb/commit/f38bdaa96248fd515d0518ea43a39c2f6d03a4c4).
+- 2026-05-14 - Updated the changelog with resource alias resolution and previous changelog history. Commit [a682d13](https://github.com/PatrickJS/jsondb/commit/a682d13a4753eef6f09e9c9fb54921cb3f3a789e).
+- 2026-05-14 - Added architecture documentation, README and agent-guide cross-references, package globs for example metadata/source files, and command-specific CLI help handling. Commit [0b4d31e](https://github.com/PatrickJS/jsondb/commit/0b4d31e9329121a4e6c419451774e908360a021f).
