@@ -80,7 +80,7 @@ async function runTypes(config, args) {
   if (args.includes('--watch')) {
     await runTypesOnce(config, args);
     console.log(`Watching ${path.relative(config.cwd, config.sourceDir) || '.'}`);
-    watch(config.sourceDir, { recursive: false }, async () => {
+    watch(config.sourceDir, { recursive: true }, async () => {
       try {
         await runTypesOnce(config, args);
       } catch (error) {

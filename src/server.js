@@ -136,7 +136,7 @@ export async function watchSourceDir(db, events, options = {}) {
   let watcher;
 
   try {
-    watcher = watchImpl(db.config.sourceDir, { recursive: false }, (_event, filename) => {
+    watcher = watchImpl(db.config.sourceDir, { recursive: true }, (_event, filename) => {
       if (!enabled || shouldIgnoreSourceEvent(db, filename)) {
         return;
       }

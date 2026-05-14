@@ -153,7 +153,7 @@ function defaultFieldManifest(fieldName, field, resource, config, diagnostics, f
   }
 
   if (field.type === 'array') {
-    manifest.items = itemManifest(field.items ?? { type: 'unknown' });
+    manifest.items = itemManifest(field.items ?? { type: 'unknown' }, resource, config, diagnostics, fieldPath);
   }
 
   if (field.type === 'object' && field.fields && typeof field.fields === 'object') {
@@ -164,7 +164,7 @@ function defaultFieldManifest(fieldName, field, resource, config, diagnostics, f
   return manifest;
 }
 
-function itemManifest(field) {
+function itemManifest(field, resource, config, diagnostics, fieldPath) {
   const manifest = {
     type: field.type ?? 'unknown',
     required: Boolean(field.required),
@@ -190,13 +190,11 @@ function itemManifest(field) {
   }
 
   if (field.type === 'array') {
-    manifest.items = itemManifest(field.items ?? { type: 'unknown' });
+    manifest.items = itemManifest(field.items ?? { type: 'unknown' }, resource, config, diagnostics, fieldPath);
   }
 
   if (field.type === 'object' && field.fields && typeof field.fields === 'object') {
-    manifest.fields = Object.fromEntries(
-      Object.entries(field.fields).map(([childName, childField]) => [childName, itemManifest(childField)]),
-    );
+    manifest.fields = renderFieldMap(field.fields, resource, config, diagnostics, fieldPath);
   }
 
   return manifest;

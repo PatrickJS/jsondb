@@ -724,14 +724,32 @@ function withComputedMetadata(resource) {
 
 async function listSourceFiles(sourceDir) {
   try {
-    const entries = await readdir(sourceDir, { withFileTypes: true });
-    return entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+    return await listSourceFilesInDirectory(sourceDir);
   } catch (error) {
     if (error.code === 'ENOENT') {
       return [];
     }
     throw error;
   }
+}
+
+async function listSourceFilesInDirectory(directory, prefix = '') {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const relativePath = prefix ? path.join(prefix, entry.name) : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...await listSourceFilesInDirectory(path.join(directory, entry.name), relativePath));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      files.push(relativePath);
+    }
+  }
+
+  return files.sort();
 }
 
 async function loadDataFile(filePath) {
@@ -792,11 +810,11 @@ function schemaSourceFromPath(schemaPath) {
 }
 
 function dataResourceName(filename) {
-  return filename.replace(/\.(jsonc?|csv)$/, '');
+  return path.basename(filename).replace(/\.(jsonc?|csv)$/, '');
 }
 
 function schemaResourceName(filename) {
-  return filename.replace(/\.schema\.(json|jsonc|mjs)$/, '');
+  return path.basename(filename).replace(/\.schema\.(json|jsonc|mjs)$/, '');
 }
 
 function inferKindFromData(data) {
