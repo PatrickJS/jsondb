@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
-import { findExamples, renderExamplesIndex } from '../scripts/serve-examples.js';
+import { findExamples, renderExamplesIndex } from '../../scripts/serve-examples.js';
 
 test('examples launcher can discover repo examples and render an index page', async () => {
   const examples = await findExamples(path.resolve('examples'));
