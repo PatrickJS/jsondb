@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
-import { jsonDbError, listChoices } from '../errors.js';
-import { resolveFrom } from '../fs-utils.js';
+import { jsonDbError, listChoices } from '../../errors.js';
+import { resolveFrom } from '../../fs-utils.js';
 
 const FORK_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
