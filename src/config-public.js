@@ -1,3 +1,1 @@
-export function defineConfig(config) {
-  return config;
-}
+export { defineConfig, mergeManifest, parseFixturePath, resourceNameFromPath } from './features/config/public.js';

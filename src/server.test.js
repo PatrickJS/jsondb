@@ -93,6 +93,34 @@ test('server source watch handles watcher error events without crashing', async 
   watcher.close();
 });
 
+test('server source watch ignores dot folders inside db', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const published = [];
+  const fsWatcher = new EventEmitter();
+  fsWatcher.close = () => {};
+
+  const watcher = await watchSourceDir(db, {
+    publish(payload) {
+      published.push(payload);
+    },
+  }, {
+    watch(_directory, _options, listener) {
+      fsWatcher.listener = listener;
+      return fsWatcher;
+    },
+  });
+
+  fsWatcher.listener('change', '.jsondb/state/users.json');
+  fsWatcher.listener('change', '.cache/internal.json');
+  await new Promise((resolve) => setTimeout(resolve, 125));
+
+  assert.deepEqual(published, []);
+  watcher.close();
+});
+
 test('request handler supports scoped Vite routes without root REST routes', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([
@@ -221,6 +249,29 @@ test('request handler returns a structured 404 for unknown forks', async () => {
   assert.equal(await handler(makeRequest('GET', '/__jsondb/forks/missing/rest/users'), response), true);
   assert.equal(response.status, 404);
   assert.equal(response.json().error.code, 'FORK_NOT_FOUND');
+});
+
+test('request handler streams live runtime log events', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const handler = createJsonDbRequestHandler(db);
+  const response = makeResponse();
+
+  assert.equal(await handler(makeRequest('GET', '/__jsondb/log'), response), true);
+  await db.collection('users').create({ id: 'u_2', name: 'Grace' });
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers['content-type'], /text\/event-stream/);
+  assert.match(response.body, /event: jsondb-log/);
+  assert.match(response.body, /"resource":"users"/);
+  assert.match(response.body, /"op":"create"/);
 });
 
 function makeRequest(method, path, body) {

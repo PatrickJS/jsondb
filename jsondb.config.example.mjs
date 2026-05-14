@@ -19,6 +19,12 @@ export default defineConfig({
     },
   },
 
+  // Optional custom source readers. Built-in readers handle JSON, JSONC, CSV,
+  // .schema.json, .schema.jsonc, and .schema.mjs. Custom readers run first.
+  sources: {
+    readers: [],
+  },
+
   // mirror: keep source fixtures unchanged and write app edits to .jsondb/state.
   // source: write generated ids back to plain .json fixtures when needed.
   mode: 'mirror',

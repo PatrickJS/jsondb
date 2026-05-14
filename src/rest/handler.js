@@ -50,7 +50,8 @@ async function handleRestRequestUnsafe(db, request, response, url, options) {
   }
 
   const resourceUrl = restResourceUrl(url, routeOptions);
-  const [routeName, id] = resourceUrl.pathname.split('/').filter(Boolean);
+  const [rawRouteName, rawId] = resourceUrl.pathname.split('/').filter(Boolean);
+  const { routeName, id, format } = parseFormattedResourcePath(rawRouteName, rawId);
   if (!routeName) {
     const discovery = rootDiscovery(db, routeOptions);
     if (request.method === 'GET' && requestPrefersHtml(request)) {
@@ -79,10 +80,44 @@ async function handleRestRequestUnsafe(db, request, response, url, options) {
   }
 
   if (resource.kind === 'collection') {
-    await handleCollection(db, resource, id, request, response, resourceUrl);
+    await handleCollection(db, resource, id, request, response, resourceUrl, format);
   } else {
-    await handleDocument(db, resource, request, response);
+    await handleDocument(db, resource, request, response, format);
   }
+}
+
+function parseFormattedResourcePath(routeName, id) {
+  if (!routeName) {
+    return { routeName, id, format: null };
+  }
+
+  if (id) {
+    const parsedId = splitFormatExtension(id);
+    return {
+      routeName,
+      id: parsedId.name,
+      format: parsedId.format,
+    };
+  }
+
+  const parsedRoute = splitFormatExtension(routeName);
+  return {
+    routeName: parsedRoute.name,
+    id,
+    format: parsedRoute.format,
+  };
+}
+
+function splitFormatExtension(value) {
+  const match = String(value).match(/^(.+)\.([A-Za-z][A-Za-z0-9_-]*)$/);
+  if (!match) {
+    return { name: value, format: null };
+  }
+
+  return {
+    name: match[1],
+    format: match[2],
+  };
 }
 
 export function findResourceByRoute(db, routeName) {
@@ -574,11 +609,11 @@ function makeBatchResponse() {
   };
 }
 
-async function handleCollection(db, resource, id, request, response, url) {
+async function handleCollection(db, resource, id, request, response, url, format) {
   const collection = db.collection(resource.name);
 
   if (request.method === 'GET' && !id) {
-    sendJson(response, 200, await shapeCollectionRead(db, resource, await collection.all(), url, { allowPagination: true }));
+    await sendFormattedResource(db, response, resource, await shapeCollectionRead(db, resource, await collection.all(), url, { allowPagination: true }), format, request, url);
     return;
   }
 
@@ -587,7 +622,11 @@ async function handleCollection(db, resource, id, request, response, url) {
     const body = record
       ? await shapeCollectionRead(db, resource, [record], url, { allowPagination: false })
       : null;
-    sendJson(response, record ? 200 : 404, body?.[0] ?? { error: 'Not found' });
+    if (!record) {
+      sendJson(response, 404, { error: 'Not found' });
+      return;
+    }
+    await sendFormattedResource(db, response, resource, body[0], format, request, url);
     return;
   }
 
@@ -617,11 +656,11 @@ async function handleCollection(db, resource, id, request, response, url) {
   });
 }
 
-async function handleDocument(db, resource, request, response) {
+async function handleDocument(db, resource, request, response, format) {
   const document = db.document(resource.name);
 
   if (request.method === 'GET') {
-    sendJson(response, 200, await document.all());
+    await sendFormattedResource(db, response, resource, await document.all(), format, request, new URL(request.url ?? '/', 'http://jsondb.local'));
     return;
   }
 
@@ -642,4 +681,82 @@ async function handleDocument(db, resource, request, response) {
   sendJson(response, 405, {
     error: 'Method not allowed',
   });
+}
+
+async function sendFormattedResource(db, response, resource, data, format, request, url) {
+  const renderer = resolveFormatRenderer(db.config, format);
+  if (!renderer) {
+    const availableFormats = availableRestFormats(db.config);
+    sendJson(response, 404, {
+      error: {
+        code: 'REST_UNKNOWN_FORMAT',
+        message: `Unknown REST format "${format}".`,
+        hint: `Use one of: ${listChoices(availableFormats.map((item) => `.${item}`))}.`,
+        details: {
+          format,
+          availableFormats,
+        },
+      },
+    });
+    return;
+  }
+
+  const result = await renderer({
+    db,
+    resource,
+    resourceName: resource.name,
+    data,
+    format: format ?? 'default',
+    request,
+    url,
+  });
+  const normalized = normalizeFormatResult(result);
+  sendText(response, normalized.status, normalized.body, normalized.contentType);
+}
+
+function resolveFormatRenderer(config, format) {
+  const formats = config.rest?.formats ?? {};
+  const key = format ?? 'default';
+  const configured = formats[key];
+
+  if (typeof configured === 'string') {
+    return resolveFormatRenderer(config, configured);
+  }
+
+  if (typeof configured === 'function') {
+    return configured;
+  }
+
+  if (key === 'default') {
+    return resolveFormatRenderer({ ...config, rest: { ...config.rest, formats: { ...formats, default: 'json' } } }, null);
+  }
+
+  if (key === 'json') {
+    return ({ data }) => ({
+      body: `${JSON.stringify(data, null, 2)}\n`,
+      contentType: 'application/json; charset=utf-8',
+    });
+  }
+
+  return null;
+}
+
+function availableRestFormats(config) {
+  return [...new Set(['json', ...Object.keys(config.rest?.formats ?? {}).filter((key) => key !== 'default')])].sort();
+}
+
+function normalizeFormatResult(result) {
+  if (typeof result === 'string' || Buffer.isBuffer(result)) {
+    return {
+      status: 200,
+      body: result,
+      contentType: 'text/plain; charset=utf-8',
+    };
+  }
+
+  return {
+    status: result?.status ?? 200,
+    body: result?.body ?? '',
+    contentType: result?.contentType ?? result?.headers?.['content-type'] ?? 'text/plain; charset=utf-8',
+  };
 }

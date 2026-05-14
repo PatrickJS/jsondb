@@ -6,7 +6,7 @@ A local JSON fixture database for app development and tests. Use it as a rapid p
 
 Most projects should start with the happy path defaults:
 
-1. Put JSON, JSONC, or CSV fixtures in `db/`.
+1. Put JSON, JSONC, or CSV fixtures in `db/`, either at the top level or in nested folders.
 2. Run `npm run db:sync` to generate `.jsondb/state`, schema metadata, and TypeScript types.
 3. Run `npm run db:serve` to start the local API and data viewer.
 4. Open `http://127.0.0.1:7331/__jsondb` to inspect data, import CSVs, read REST docs, and try requests.
@@ -108,6 +108,8 @@ Use this table to start with defaults and then jump to the config only when a us
 | Share local data across tests and demos | Default sync output in `.jsondb/state`                                      | Test imports need stable generated types: [committed generated types](#committed-generated-types)      |
 | Keep old demo pages while refactoring   | Main `db/` for the new shape                                                | Legacy pages need their own source shape: [database forks](#database-forks)                           |
 | Import spreadsheet or product data      | `db/*.csv` or viewer CSV import                                             | CSVs belong in another folder: [different fixture folder](#different-fixture-folder)                   |
+| Keep another schema/data format         | Built-in JSON, JSONC, CSV, or `.schema.mjs` readers                         | Add a [source reader](#source-readers) that returns jsondb schema/data inputs                          |
+| Build model-driven admin/CMS screens    | Nested fixtures such as `db/cms/pages.schema.jsonc`                         | Forms need committed field metadata: [schema manifest output](#schema-manifest-output)                 |
 | Evolve fuzzy data into a contract       | Add `db/<name>.schema.json` or `.schema.jsonc`                              | Schema drift should fail instead of warn: [schema strictness](#schema-strictness)                      |
 | Find fixture consistency issues         | `npm run db -- doctor`                                                      | CI should fail on warnings: `npm run db -- check --strict`                                            |
 | Start from types before records exist   | Schema-first fixtures with empty `seed`                                     | You want mock records generated from schema: [generated schema seed data](#generated-schema-seed-data) |
@@ -122,6 +124,8 @@ The defaults are designed to be useful without `jsondb.config.mjs`. When you do 
 | ------------------------------------ | ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Typed, commented config              | No config file required       | [Likely first config](#likely-first-config)                               | Get editor autocomplete and know the common values when you add config. |
 | Fixture folder                       | `./db`                        | [Different fixture folder](#different-fixture-folder)                     | Keep fixtures in a package, example, or app-specific folder.            |
+| Custom source formats                | Built-in readers               | [Source readers](#source-readers)                                         | Parse YAML, Excel, CMS exports, or model files into jsondb inputs.      |
+| Nested resource names                | Fixture basename              | [Nested fixture folders](#nested-fixture-folders)                         | Avoid collisions and control REST/GraphQL names for organized fixtures. |
 | Runtime state behavior               | `.jsondb`, mirror mode        | [Mirror vs source mode](#mirror-vs-source-mode)                           | Keep source fixtures clean, or intentionally write generated ids back.  |
 | Importable generated types           | `.jsondb/types/index.ts`      | [Committed generated types](#committed-generated-types)                   | Let TypeScript imports work in CI and fresh checkouts before sync runs. |
 | Importable schema manifest           | Off                           | [Schema manifest output](#schema-manifest-output)                         | Generate runtime field metadata for model-driven admin/CMS forms.       |
@@ -132,6 +136,7 @@ The defaults are designed to be useful without `jsondb.config.mjs`. When you do 
 | Temporary legacy database shapes      | Off                           | [Database forks](#database-forks)                                         | Run old and new local data contracts from one dev server.               |
 | Host, port, body limit               | `127.0.0.1:7331`, 1 MB bodies | [Server options](#server-options)                                         | Avoid port conflicts or allow larger local payloads.                    |
 | Multiple REST calls in one request   | Available                     | [REST batching](#rest-batching)                                           | Batch local reads and writes through `POST /__jsondb/batch`.            |
+| REST response formats                | JSON                          | [REST formats](#rest-formats)                                             | Render `.json`, `.md`, `.html`, or other GET formats from config.       |
 | Production-ish API starter           | Not generated                 | [Hono and SQLite starter generation](#hono-and-sqlite-starter-generation) | Turn settled fixtures and schemas into a Hono/SQLite starter.           |
 
 ## Likely First Config
@@ -232,6 +237,45 @@ By default, unknown fields produce warnings for local development. Use [schema s
 Schema fields can use `nullable: true` when `null` is an intentional value. `datetime` fields validate as strings and generate TypeScript `string` types. Object fields can set `additionalProperties: true` when nested keys are intentionally flexible.
 
 Field constraints are checked during `sync`, schema validation, package API writes, REST writes, and GraphQL mutations. Use `unique: true` for collection fields that must not repeat, `min`/`max` for numbers, `minLength`/`maxLength` for strings or arrays, and `pattern` for string regular expression checks.
+
+## Source Readers
+
+jsondb reads all source files through a reader pipeline. The built-in readers handle `.json`, `.jsonc`, `.csv`, `.schema.json`, `.schema.jsonc`, and `.schema.mjs`. Add `sources.readers` when another file format should remain the source of truth.
+
+Readers parse files into raw jsondb inputs. jsondb still owns resource naming, schema normalization, validation, generated ids, TypeScript types, schema manifests, REST, GraphQL, and sync.
+
+```js
+// jsondb.config.mjs
+// @ts-check
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  sources: {
+    readers: [
+      {
+        name: 'pipe-data',
+        match({ file }) {
+          return file.endsWith('.pipe');
+        },
+        async read({ readText }) {
+          const rows = (await readText()).trim().split('\n');
+          return {
+            kind: 'data',
+            resourceName: 'users',
+            format: 'pipe',
+            data: rows.map((row) => {
+              const [id, name] = row.split('|');
+              return { id, name };
+            }),
+          };
+        },
+      },
+    ],
+  },
+});
+```
+
+Custom readers run before built-in readers. The first reader that returns a result owns the file; returning `null` lets the next reader try. A reader can also return `{ kind: 'schema', schema }` for schema-first sources. One file may return multiple sources, such as one Excel workbook with several sheets, but every returned source must include `resourceName`.
 
 ## Fixture Styles
 
@@ -485,6 +529,63 @@ curl -X PATCH http://127.0.0.1:7331/users/u_2 \
 ```bash
 curl -X DELETE http://127.0.0.1:7331/users/u_2
 ```
+
+### REST Formats
+
+Resource `GET` routes return JSON by default. The explicit `.json` extension uses the same shaped data:
+
+```txt
+GET /users
+GET /users.json
+GET /users/u_1
+GET /users/u_1.json
+```
+
+You can override extensionless output with `rest.formats.default`, override `.json` with `rest.formats.json`, and add formats such as `.md` or `.html` from config. Format renderers receive data after normal REST shaping, so `select`, `expand`, `offset`, and `limit` still apply before rendering.
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  rest: {
+    formats: {
+      default: 'json',
+
+      json({ data }) {
+        return {
+          body: JSON.stringify({ data }, null, 2),
+          contentType: 'application/json; charset=utf-8',
+        };
+      },
+
+      md({ resourceName, data }) {
+        return {
+          body: `# ${resourceName}\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n`,
+          contentType: 'text/markdown; charset=utf-8',
+        };
+      },
+
+      html({ data }) {
+        return {
+          body: `<!doctype html><html><body><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></body></html>`,
+          contentType: 'text/html; charset=utf-8',
+        };
+      },
+    },
+  },
+});
+```
+
+With that config:
+
+```txt
+GET /users       -> rest.formats.default, which delegates to json above
+GET /users.json  -> rest.formats.json
+GET /users.md    -> rest.formats.md
+GET /users.html  -> rest.formats.html
+```
+
+Frameworks can hook into `.html` by importing their own server renderer inside `jsondb.config.mjs` and returning the final HTML string. jsondb does not execute `.jsx` routes directly; JSX is a source/runtime choice for your renderer, while `.html` is the response format.
 
 ### Relationship Expansion
 
@@ -858,6 +959,91 @@ export default defineConfig({
 
 Existing `sourceDir` configs still work; `dbDir` is the shorter fixture-folder name. If both are provided, `sourceDir` wins for backwards compatibility.
 
+### Nested Fixture Folders
+
+Fixtures can be grouped into folders under `db/` without changing their resource names. jsondb discovers supported files recursively, and the resource name still comes from the fixture basename:
+
+```txt
+db/
+  cms/
+    pages.schema.jsonc
+    pages.json
+  analytics/
+    charts.schema.jsonc
+    charts.json
+```
+
+That layout creates `pages` and `charts` resources, writes runtime mirrors to `.jsondb/state/pages.json` and `.jsondb/state/charts.json`, and keeps the nested source path available in sync metadata and schema manifest customization hooks. Keep fixture basenames unique across nested folders so each basename maps to one resource.
+
+This is useful for admin and CMS projects where fixtures often belong near a content domain, but the app still wants simple resource names and routes such as `GET /pages`, `POST /pages`, and `GET /charts`.
+
+If nested folders contain the same basename, configure how paths become resource names:
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  resources: {
+    naming: 'folder-prefixed',
+  },
+});
+```
+
+Naming options:
+
+| Option              | Example path                 | Resource name    | Use when                                                                 |
+| ------------------- | ---------------------------- | ---------------- | ------------------------------------------------------------------------ |
+| `basename`          | `db/cms/pages.json`          | `pages`          | You want the simplest, most stable API and fixture basenames are unique. |
+| `folder-prefixed`   | `db/cms/pages.json`          | `cmsPages`       | Folders are domains and repeated filenames such as `pages.json` are common. |
+| `path`              | `db/cms/landing/pages.json`  | `cmsLandingPages` | Deep folder structure should become part of the API name. Moving files changes API names. |
+| `customizeResource` | `db/marketing/pages.json`    | `landingPages`   | Public API names must be explicit and stable.                            |
+
+Resource names affect every public data surface:
+
+```txt
+db/cms/pages.json       -> cmsPages
+db/marketing/pages.json -> marketingPages
+
+State:
+.jsondb/state/cmsPages.json
+
+REST:
+GET /cms-pages
+GET /cms-pages.json
+
+GraphQL:
+query { cmsPages { id } }
+mutation { createMarketingPage(input: { id: "home" }) { id } }
+
+TypeScript:
+JsonDbCollections["cmsPages"]
+
+Relations:
+{ "relation": { "to": "cmsPages" } }
+```
+
+For hand-picked names, use the same visitor pattern as schema manifest customization:
+
+```js
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  resources: {
+    customizeResource({ file, defaultResource }) {
+      if (file === 'db/cms/pages.json' || file === 'db/cms/pages.schema.jsonc') {
+        return { ...defaultResource, name: 'cmsPages' };
+      }
+
+      if (file === 'db/marketing/pages.json' || file === 'db/marketing/pages.schema.jsonc') {
+        return { ...defaultResource, name: 'marketingPages' };
+      }
+
+      return defaultResource;
+    },
+  },
+});
+```
+
 ### Mirror Vs Source Mode
 
 Use `mode: 'mirror'` when source fixtures should stay unchanged. This is the default and the safest path for local development because writes go to `.jsondb/state`.
@@ -906,28 +1092,143 @@ jsondb schema manifest --out ./src/generated/jsondb.schema.json
 
 The JSON manifest groups `collections` and `documents`, includes normalized field metadata such as `type`, `required`, `nullable`, `default`, `values`, nested `fields`, array `items`, and `relation`, and adds inferred `ui` defaults. Defaults are metadata only; they do not change fixtures, seed data, runtime state, REST, or GraphQL behavior.
 
-Override or omit field output with a visitor hook:
+For example, these CMS fixtures:
+
+```txt
+db/
+  cms/
+    pages.schema.jsonc
+    pages.json
+  analytics/
+    charts.schema.jsonc
+    charts.json
+```
+
+can generate a committed manifest like this:
+
+```json
+{
+  "version": 1,
+  "collections": {
+    "pages": {
+      "kind": "collection",
+      "name": "pages",
+      "idField": "id",
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "ui": {
+            "label": "Id",
+            "component": "text",
+            "readonly": true
+          }
+        },
+        "blocks": {
+          "type": "array",
+          "required": false,
+          "nullable": false,
+          "items": {
+            "type": "object",
+            "required": false,
+            "nullable": false,
+            "fields": {
+              "type": {
+                "type": "enum",
+                "required": true,
+                "nullable": false,
+                "values": ["chart", "metric"]
+              },
+              "chartId": {
+                "type": "string",
+                "required": false,
+                "nullable": false
+              }
+            }
+          },
+          "ui": {
+            "label": "Blocks",
+            "component": "list"
+          }
+        }
+      }
+    }
+  },
+  "documents": {}
+}
+```
+
+Override resource or field output with `schemaManifest.customizeResource` and `schemaManifest.customizeField`. These hooks are intended for app-specific admin/CMS presentation metadata: reusable form components, labels, relation pickers, sections, ordering, readonly policy hints, and fields that should not appear in generated forms. Keep those hints in config or generated manifests; fixture records do not need `ui`, `editor`, or other jsondb-specific properties.
 
 ```js
-import { defineConfig } from 'jsondb/config';
+import { defineConfig, mergeManifest } from 'jsondb/config';
 
 export default defineConfig({
+  schemaOutFile: './src/generated/jsondb.schema.json',
   schemaManifest: {
-    customizeField({ fieldName, resourceName, file, path, defaultManifest }) {
-      if (resourceName === 'users' && fieldName === 'passwordHash') {
-        return null;
+    customizeResource({ file, defaultManifest }) {
+      return mergeManifest(defaultManifest, {
+        editor: {
+          group: file?.startsWith('db/cms/') ? 'CMS' : 'Data',
+        },
+      });
+    },
+
+    customizeField({ resourceName, fieldName, path, file, defaultManifest }) {
+      if (resourceName !== 'pages') {
+        return defaultManifest;
       }
 
-      if (fieldName.endsWith('Markdown')) {
-        return {
-          ...defaultManifest,
-          ui: {
-            ...defaultManifest.ui,
-            component: 'markdown',
-            section: file,
-            orderKey: path,
+      if (path === 'blocks') {
+        return mergeManifest(defaultManifest, {
+          editor: {
+            component: 'block-list',
+            source: file,
           },
-        };
+        });
+      }
+
+      if (fieldName === 'type') {
+        return mergeManifest(defaultManifest, {
+          values: ['chart', 'metric'],
+          editor: {
+            component: 'select',
+            label: 'Block type',
+          },
+        });
+      }
+
+      if (fieldName === 'chartId') {
+        return mergeManifest(defaultManifest, {
+          editor: {
+            component: 'relation-select',
+            relationTo: 'charts',
+          },
+        });
+      }
+
+      if (fieldName === 'aggregate' || fieldName === 'format' || fieldName === 'size') {
+        const values = fieldName === 'aggregate'
+          ? ['count', 'sum', 'avg', 'min', 'max', 'latest']
+          : fieldName === 'format'
+            ? ['number', 'currency', 'percent']
+            : ['small', 'medium', 'large'];
+
+        return mergeManifest(defaultManifest, {
+          values,
+          editor: {
+            component: 'select',
+          },
+        });
+      }
+
+      if (fieldName === 'title' || fieldName === 'description') {
+        return mergeManifest(defaultManifest, {
+          editor: {
+            component: 'textarea',
+          },
+        });
       }
 
       return defaultManifest;
@@ -935,6 +1236,62 @@ export default defineConfig({
   },
 });
 ```
+
+The generated output can then carry your app's form metadata while preserving normalized schema metadata:
+
+```json
+{
+  "type": "array",
+  "required": false,
+  "nullable": false,
+  "items": {
+    "type": "object",
+    "required": false,
+    "nullable": false,
+    "fields": {
+      "type": {
+        "type": "enum",
+        "required": true,
+        "nullable": false,
+        "values": ["chart", "metric"],
+        "ui": {
+          "component": "select",
+          "label": "Block type"
+        }
+      },
+      "chartId": {
+        "type": "string",
+        "required": false,
+        "nullable": false,
+        "ui": {
+          "component": "relation-select",
+          "relationTo": "charts"
+        }
+      }
+    }
+  },
+  "ui": {
+    "label": "Blocks",
+    "component": "block-list",
+    "source": "db/cms/pages.schema.jsonc"
+  }
+}
+```
+
+`customizeField` receives these arguments:
+
+| Argument          | Meaning                                                                 | Useful when                                                                                  |
+| ----------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `resourceName`    | Resource key such as `pages` or `charts`.                               | Apply UI rules to one collection or document.                                                 |
+| `fieldName`       | Current field's local name, such as `chartId`.                          | Match repeated field conventions across nested objects, arrays, and resources.                |
+| `path`            | Dot path inside the resource, such as `blocks.type` or `seo.title`.     | Target one nested field, preserve form ordering, or create section keys.                      |
+| `file`            | Relative source path, such as `db/cms/pages.schema.jsonc`.              | Group generated form fields by fixture folder, show edit-source links, or debug CMS metadata. |
+| `sourceFile`      | Absolute source file path.                                               | Integrate with local tooling that needs an absolute path.                                     |
+| `field`           | Normalized jsondb field schema.                                          | Branch on schema facts such as `type`, `relation`, `values`, or constraints.                 |
+| `resource`        | Normalized resource metadata.                                            | Inspect kind, id field, relations, or source metadata for broader resource-level rules.       |
+| `defaultManifest` | The JSON-serializable manifest jsondb would emit without customization. | Preserve defaults while overriding only the app-specific UI metadata you care about.          |
+
+Return `defaultManifest` to keep a field unchanged, return a modified copy to add app metadata, or return `null` to omit the field from the manifest. Returned values must be JSON-serializable.
 
 ### Schema Strictness
 

@@ -31,10 +31,167 @@ export type JsonDbSchemaManifestFieldContext = {
   defaultManifest: Record<string, unknown>;
 };
 
+export type JsonDbSchemaManifestResourceContext = {
+  resource: Record<string, unknown>;
+  resourceName: string;
+  file: string | null;
+  sourceFile: string | null;
+  defaultManifest: Record<string, unknown>;
+};
+
 export type JsonDbSchemaManifestOptions = {
+  /** Customize generated resource manifest entries. */
+  customizeResource?: (context: JsonDbSchemaManifestResourceContext) => Record<string, unknown>;
   /** Customize or omit generated field manifest entries. Return null to omit a field. */
   customizeField?: (context: JsonDbSchemaManifestFieldContext) => Record<string, unknown> | null;
 };
+
+export type JsonDbResourceNamingStrategy = 'basename' | 'folder-prefixed' | 'path';
+
+export type JsonDbResourceCustomizeContext = {
+  file: string;
+  sourceFile: string;
+  basename: string;
+  folder: string | null;
+  folders: string[];
+  extension: string;
+  defaultName: string;
+  defaultResource: {
+    name: string;
+  };
+};
+
+export type JsonDbResourceOptions = {
+  /** How fixture paths become resource names. Defaults to "basename". */
+  naming?: JsonDbResourceNamingStrategy;
+  /** Customize fixture path -> resource identity. */
+  customizeResource?: (context: JsonDbResourceCustomizeContext) => { name?: string } | null | undefined;
+  /** Per-resource runtime settings keyed by normalized resource name. */
+  [resourceName: string]: JsonDbResourceNamingStrategy
+    | ((context: JsonDbResourceCustomizeContext) => { name?: string } | null | undefined)
+    | JsonDbPerResourceOptions
+    | undefined;
+};
+
+export type JsonDbRuntimeStrategy = 'json' | 'memory' | 'source' | 'static' | string;
+
+export type JsonDbRuntimeCapabilities = {
+  writable?: boolean;
+  persistence?: 'local-file' | 'memory' | 'static' | 'remote' | string;
+  atomicity?: 'resource' | 'process' | 'none' | 'request' | string;
+  liveEvents?: boolean;
+  staticExport?: boolean;
+  production?: boolean | 'small-local' | 'small-app' | string;
+};
+
+export type JsonDbRuntimeAdapter = {
+  name: string;
+  capabilities?: JsonDbRuntimeCapabilities;
+};
+
+export type JsonDbRuntimeAdapterFactory =
+  | JsonDbRuntimeAdapter
+  | ((context: { config: JsonDbOptions; resources: unknown[] }) => JsonDbRuntimeAdapter);
+
+export type JsonDbPerResourceOptions = {
+  /** Runtime adapter name for this resource. Defaults to runtime.default. */
+  runtime?: JsonDbRuntimeStrategy | { adapter?: string; name?: string };
+};
+
+export type JsonDbRuntimeOptions = {
+  /** Default runtime adapter for resources without an explicit runtime. Defaults to "json". */
+  default?: JsonDbRuntimeStrategy;
+  /** Internal/future runtime adapter plugins. */
+  adapters?: JsonDbRuntimeAdapterFactory[];
+};
+
+export type JsonDbRuntimeEvent = {
+  version: number;
+  timestamp: string;
+  resource: string;
+  kind: 'collection' | 'document';
+  op: string;
+  id?: string | number;
+  pointer?: string;
+};
+
+export type JsonDbRuntimeEvents = {
+  readonly version: number;
+  subscribe(subscriber: (event: JsonDbRuntimeEvent) => void): () => void;
+};
+
+export type JsonDbSourceReaderContext = {
+  /** Repo-relative source path, such as "db/users.json". */
+  file: string;
+  /** Absolute source file path. */
+  sourceFile: string;
+  filename: string;
+  basename: string;
+  extension: string;
+  folder: string | null;
+  folders: string[];
+  /** SHA-256 hash of the source file bytes. */
+  hash: string;
+  config: JsonDbOptions;
+  readText(): Promise<string>;
+  readBuffer(): Promise<Buffer>;
+};
+
+export type JsonDbSourceReaderDataResult = {
+  kind: 'data';
+  data: unknown;
+  /** Format label stored in source metadata. Defaults to the reader name. */
+  format?: string;
+  /** Explicit resource name. Required when one file returns multiple sources. */
+  resourceName?: string;
+};
+
+export type JsonDbSourceReaderSchemaResult = {
+  kind: 'schema';
+  schema: unknown;
+  /** Schema source label, such as "jsonc", "mjs", or a custom format. */
+  format?: string;
+  /** Explicit resource name. Required when one file returns multiple sources. */
+  resourceName?: string;
+};
+
+export type JsonDbSourceReaderSingleResult = JsonDbSourceReaderDataResult | JsonDbSourceReaderSchemaResult;
+
+export type JsonDbSourceReaderResult =
+  | JsonDbSourceReaderSingleResult
+  | Array<JsonDbSourceReaderResult>
+  | null
+  | undefined;
+
+export type JsonDbSourceReader = {
+  name: string;
+  match(context: JsonDbSourceReaderContext): boolean | Promise<boolean>;
+  read(context: JsonDbSourceReaderContext): JsonDbSourceReaderResult | Promise<JsonDbSourceReaderResult>;
+};
+
+export type JsonDbSourcesOptions = {
+  /** Custom source readers. They run before built-in JSON, JSONC, CSV, and .schema.mjs readers. */
+  readers?: JsonDbSourceReader[];
+};
+
+export type JsonDbRestFormatContext = {
+  db: unknown;
+  resource: Record<string, unknown>;
+  resourceName: string;
+  data: unknown;
+  format: string;
+  request: IncomingMessage | Record<string, unknown>;
+  url: URL;
+};
+
+export type JsonDbRestFormatResult = string | Buffer | {
+  status?: number;
+  body?: string | Buffer;
+  contentType?: string;
+  headers?: Record<string, string>;
+};
+
+export type JsonDbRestFormatRenderer = (context: JsonDbRestFormatContext) => JsonDbRestFormatResult | Promise<JsonDbRestFormatResult>;
 
 export type JsonDbOptions = {
   /** Project root used to resolve relative config paths. Defaults to process.cwd(). */
@@ -51,6 +208,8 @@ export type JsonDbOptions = {
   schemaOutFile?: string | null;
   /** Optional visitor hooks for customizing generated schema manifest output. */
   schemaManifest?: JsonDbSchemaManifestOptions;
+  /** Optional source readers for custom schema or data file formats. */
+  sources?: JsonDbSourcesOptions;
   /** "mirror" keeps source fixtures unchanged; "source" may write generated ids back to plain .json fixtures. */
   mode?: 'mirror' | 'source';
   /** Run sync automatically when opening the package API. */
@@ -86,6 +245,10 @@ export type JsonDbOptions = {
   };
   /** Per-collection overrides such as custom id field names. */
   collections?: Record<string, { idField?: string }>;
+  /** Resource naming and fixture path identity options. */
+  resources?: JsonDbResourceOptions;
+  /** Runtime storage strategy options. Defaults to the JSON mirror runtime. */
+  runtime?: JsonDbRuntimeOptions;
   server?: {
     /** Local HTTP host. Defaults to "127.0.0.1". */
     host?: string;
@@ -97,6 +260,8 @@ export type JsonDbOptions = {
   rest?: {
     /** Enable generated REST routes. */
     enabled?: boolean;
+    /** GET response formats by extension. "default" controls extensionless resource routes. */
+    formats?: Record<string, JsonDbRestFormatRenderer | string | undefined>;
   };
   graphql?: {
     /** Enable the focused dependency-free GraphQL endpoint. */
@@ -165,6 +330,7 @@ export type JsonDbDocument<DocumentType> = {
 };
 
 export type JsonFixtureDb<Types extends JsonDbTypeMap = JsonDbTypeMap> = {
+  events: JsonDbRuntimeEvents;
   collection<Name extends keyof Types['collections'] & string>(name: Name): JsonDbCollection<Types['collections'][Name]>;
   document<Name extends keyof Types['documents'] & string>(name: Name): JsonDbDocument<Types['documents'][Name]>;
   resourceNames(): string[];
@@ -283,6 +449,16 @@ export function syncJsonFixtureDb(config: JsonDbOptions, options?: { allowErrors
 export function generateTypes(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ content: string; outFiles: string[] }>;
 export function generateSchemaManifest(config: JsonDbOptions, options?: { outFile?: string }): Promise<{ manifest: unknown; content: string; outFiles: string[] }>;
 export function renderSchemaManifest(resources: unknown[], config?: JsonDbOptions): unknown;
+export function mergeManifest(base: unknown, patch: unknown): unknown;
+export function resourceNameFromPath(file: string, options?: { strategy?: JsonDbResourceNamingStrategy }): string;
+export function parseFixturePath(file: string): {
+  file: string;
+  folders: string[];
+  folder: string | null;
+  filename: string;
+  basename: string;
+  extension: string;
+};
 export function generateHonoStarter(
   config: JsonDbOptions,
   options?: {
