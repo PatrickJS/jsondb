@@ -65,6 +65,63 @@ test('package API duplicate ids produce actionable errors', async () => {
   );
 });
 
+test('collection.exists returns whether an id is present', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const users = db.collection('users');
+
+  assert.equal(await users.exists('u_1'), true);
+  assert.equal(await users.exists('missing'), false);
+});
+
+test('inferred variants validate writes through the package API', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([
+    {
+      id: 'home',
+      blocks: [
+        {
+          type: 'chart',
+          chartId: 'chart_1',
+        },
+        {
+          type: 'metric',
+          title: 'Revenue',
+          source: 'orders',
+          aggregate: 'sum',
+        },
+      ],
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+
+  await assert.rejects(
+    () => db.collection('pages').create({
+      id: 'broken',
+      blocks: [
+        {
+          type: 'chart',
+          title: 'Missing chart id',
+        },
+      ],
+    }),
+    (error) => {
+      assert.equal(error.code, 'DB_SCHEMA_VALIDATION_FAILED');
+      assert.equal(error.details.diagnostics[0].code, 'SCHEMA_REQUIRED_FIELD_MISSING');
+      assert.equal(error.details.diagnostics[0].field, 'blocks[0].chartId');
+      return true;
+    },
+  );
+});
+
 test('package API resolves camelCase and kebab-case resource names', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'chart-mappings.json', JSON.stringify([

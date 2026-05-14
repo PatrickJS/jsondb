@@ -88,6 +88,83 @@ test('schema validation resolves relation targets through resource aliases', asy
   assert.equal(project.schema.resources.chartMappings.kind, 'collection');
 });
 
+test('explicit schema variants validate records by discriminator value', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "blocks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "discriminator": "type",
+          "variants": {
+            "chart": {
+              "fields": {
+                "type": {
+                  "type": "enum",
+                  "values": ["chart"],
+                  "required": true
+                },
+                "chartId": {
+                  "type": "string",
+                  "required": true
+                }
+              }
+            },
+            "metric": {
+              "fields": {
+                "type": {
+                  "type": "enum",
+                  "values": ["metric"],
+                  "required": true
+                },
+                "title": {
+                  "type": "string",
+                  "required": true
+                },
+                "source": {
+                  "type": "string",
+                  "required": true
+                },
+                "aggregate": {
+                  "type": "string",
+                  "required": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "seed": [
+      {
+        "id": "broken",
+        "blocks": [
+          {
+            "type": "metric",
+            "title": "Revenue"
+          }
+        ]
+      }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+  const variantDiagnostics = project.diagnostics.filter((diagnostic) => (
+    diagnostic.code === 'SCHEMA_REQUIRED_FIELD_MISSING'
+  ));
+
+  assert.equal(variantDiagnostics.length, 2);
+  assert.deepEqual(variantDiagnostics.map((diagnostic) => diagnostic.field), [
+    'blocks[0].source',
+    'blocks[0].aggregate',
+  ]);
+});
+
 test('schema validation reports relation metadata on non-scalar source fields', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'authors.schema.jsonc', `{

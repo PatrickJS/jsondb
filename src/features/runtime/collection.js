@@ -20,6 +20,10 @@ export class JsonDbCollection {
     return records.find((record) => idMatches(record?.[this.resource.idField], id)) ?? null;
   }
 
+  async exists(id) {
+    return await this.get(id) !== null;
+  }
+
   async create(record) {
     return this.adapter().withResourceWrite(this.resource, async () => {
       const records = await this.all();
