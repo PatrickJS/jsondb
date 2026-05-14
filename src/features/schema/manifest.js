@@ -186,6 +186,7 @@ function defaultFieldManifest(fieldName, field, resource, config, diagnostics, f
     'maxLength',
     'pattern',
     'additionalProperties',
+    'discriminator',
   ]) {
     if (property in field) {
       manifest[property] = structuredClone(field[property]);
@@ -198,6 +199,10 @@ function defaultFieldManifest(fieldName, field, resource, config, diagnostics, f
 
   if (field.type === 'object' && field.fields && typeof field.fields === 'object') {
     manifest.fields = renderFieldMap(field.fields, resource, config, diagnostics, fieldPath);
+  }
+
+  if (field.type === 'object' && field.variants && typeof field.variants === 'object') {
+    manifest.variants = variantManifestMap(field.variants, resource, config, diagnostics, fieldPath);
   }
 
   manifest.ui = inferFieldUi(fieldName, field, resource, fieldPath);
@@ -223,6 +228,7 @@ function itemManifest(field, resource, config, diagnostics, fieldPath) {
     'maxLength',
     'pattern',
     'additionalProperties',
+    'discriminator',
   ]) {
     if (property in field) {
       manifest[property] = structuredClone(field[property]);
@@ -237,7 +243,23 @@ function itemManifest(field, resource, config, diagnostics, fieldPath) {
     manifest.fields = renderFieldMap(field.fields, resource, config, diagnostics, fieldPath);
   }
 
+  if (field.type === 'object' && field.variants && typeof field.variants === 'object') {
+    manifest.variants = variantManifestMap(field.variants, resource, config, diagnostics, fieldPath);
+  }
+
   return manifest;
+}
+
+function variantManifestMap(variants, resource, config, diagnostics, fieldPath) {
+  return Object.fromEntries(Object.entries(variants).map(([variantName, variant]) => {
+    const manifest = {
+      fields: renderFieldMap(variant.fields ?? {}, resource, config, diagnostics, `${fieldPath}.${variantName}`),
+    };
+    if ('additionalProperties' in variant) {
+      manifest.additionalProperties = Boolean(variant.additionalProperties);
+    }
+    return [variantName, manifest];
+  }));
 }
 
 function inferFieldUi(fieldName, field, resource, fieldPath) {

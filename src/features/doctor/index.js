@@ -3,9 +3,17 @@ import { forkSourceExists, isValidForkName } from '../config/forks.js';
 import { duplicateIdFindings, mixedIdTypeFindings } from './duplicate-ids.js';
 import { inconsistentFieldTypeFindings } from './field-consistency.js';
 import { relationSuggestionFindings } from './relations.js';
+import { schemaGuidanceFindings } from './schema-guidance.js';
 
 export async function runJsonDbDoctor(config) {
   const project = await loadProjectSchema(config);
+  const inferredProject = await loadProjectSchema({
+    ...config,
+    schema: {
+      ...config.schema,
+      source: 'data',
+    },
+  });
   const findings = [
     ...project.diagnostics.map((diagnostic) => ({
       source: 'schema',
@@ -13,6 +21,7 @@ export async function runJsonDbDoctor(config) {
       severity: diagnostic.severity ?? 'warn',
     })),
     ...doctorResourceFindings(project.resources),
+    ...schemaGuidanceFindings(project, inferredProject),
     ...await doctorForkFindings(config),
   ];
 

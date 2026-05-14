@@ -31,6 +31,11 @@ export function renderTypes(resources, config) {
     lines.push(`export type ${alias.name} = ${alias.values.map((value) => literalType(value)).join(' | ')};`, '');
   }
 
+  const variantAliases = collectVariantAliases(resources);
+  for (const alias of variantAliases) {
+    lines.push(...renderVariantAlias(alias, config), '');
+  }
+
   for (const resource of resources) {
     if (resource.description && config.types?.emitComments !== false) {
       lines.push(jsDoc(resource.description));
@@ -89,7 +94,7 @@ function outputFiles(config, options) {
   return unique(outFiles);
 }
 
-function renderField(fieldName, field, resource, config, depth) {
+function renderField(fieldName, field, resource, config, depth, fieldPath = fieldName) {
   const lines = [];
   const indent = '  '.repeat(depth);
 
@@ -99,12 +104,12 @@ function renderField(fieldName, field, resource, config, depth) {
 
   const readonly = config.types?.useReadonly ? 'readonly ' : '';
   const optional = field.required ? '' : '?';
-  lines.push(`${indent}${readonly}${propertyName(fieldName)}${optional}: ${typeForField(field, fieldName, resource, config, depth)};`);
+  lines.push(`${indent}${readonly}${propertyName(fieldName)}${optional}: ${typeForField(field, fieldPath, resource, config, depth)};`);
 
   return lines;
 }
 
-function typeForField(field, fieldName, resource, config, depth) {
+function typeForField(field, fieldPath, resource, config, depth) {
   let type;
   switch (field.type) {
     case 'string':
@@ -118,13 +123,15 @@ function typeForField(field, fieldName, resource, config, depth) {
       type = 'boolean';
       break;
     case 'enum':
-      type = enumAliasName(resource, fieldName);
+      type = enumAliasName(resource, fieldPath);
       break;
     case 'array':
-      type = `Array<${typeForField(field.items ?? { type: 'unknown' }, `${fieldName}Item`, resource, config, depth)}>`;
+      type = `Array<${typeForField(field.items ?? { type: 'unknown' }, `${fieldPath}Item`, resource, config, depth)}>`;
       break;
     case 'object':
-      type = objectType(field, resource, config, depth);
+      type = field.variants
+        ? variantAliasName(resource, fieldPath)
+        : objectType(field, resource, config, depth, fieldPath);
       break;
     case 'unknown':
     default:
@@ -134,7 +141,7 @@ function typeForField(field, fieldName, resource, config, depth) {
   return field.nullable ? `${type} | null` : type;
 }
 
-function objectType(field, resource, config, depth) {
+function objectType(field, resource, config, depth, fieldPath) {
   const fields = field.fields ?? {};
   const entries = Object.entries(fields);
 
@@ -152,7 +159,7 @@ function objectType(field, resource, config, depth) {
     }
 
     const optional = childField.required ? '' : '?';
-    lines.push(`${childIndent}${readonly}${propertyName(fieldName)}${optional}: ${typeForField(childField, fieldName, resource, config, depth + 1)};`);
+    lines.push(`${childIndent}${readonly}${propertyName(fieldName)}${optional}: ${typeForField(childField, `${fieldPath}${pascalCase(fieldName)}`, resource, config, depth + 1)};`);
   }
   if (field.additionalProperties === true) {
     lines.push(`${childIndent}[key: string]: unknown;`);
@@ -161,27 +168,72 @@ function objectType(field, resource, config, depth) {
   return lines.join('\n');
 }
 
+function renderVariantAlias(alias, config) {
+  const lines = [`export type ${alias.name} =`];
+  const entries = Object.entries(alias.variants);
+  for (const [index, [variantName, variant]] of entries.entries()) {
+    const prefix = index === 0 ? '  |' : '  |';
+    lines.push(`${prefix} ${variantObjectType(variantName, variant, alias.resource, config, alias.fieldPath, 2)}`);
+  }
+  return [`${lines.join('\n')};`];
+}
+
+function variantObjectType(variantName, variant, resource, config, fieldPath, depth) {
+  const fields = variant.fields ?? {};
+  const indent = '  '.repeat(depth);
+  const childIndent = '  '.repeat(depth + 1);
+  const readonly = config.types?.useReadonly ? 'readonly ' : '';
+  const lines = ['{'];
+  for (const [fieldName, childField] of Object.entries(fields)) {
+    if (childField.description && config.types?.emitComments !== false) {
+      lines.push(`${childIndent}${jsDoc(childField.description, depth + 1)}`);
+    }
+
+    const optional = childField.required ? '' : '?';
+    const childPath = `${fieldPath}${pascalCase(fieldName)}`;
+    lines.push(`${childIndent}${readonly}${propertyName(fieldName)}${optional}: ${variantFieldType(childField, fieldName, variantName, resource, config, depth + 1, childPath)};`);
+  }
+  if (variant.additionalProperties === true) {
+    lines.push(`${childIndent}[key: string]: unknown;`);
+  }
+  lines.push(`${indent}}`);
+  return lines.join('\n');
+}
+
+function variantFieldType(field, fieldName, variantName, resource, config, depth, fieldPath) {
+  if (field.type === 'enum' && field.values?.length === 1 && field.values[0] === variantName) {
+    return literalType(variantName);
+  }
+
+  return typeForField(field, fieldPath, resource, config, depth);
+}
+
 function collectEnumAliases(resources) {
-  const aliases = [];
+  const aliases = new Map();
   for (const resource of resources) {
     for (const [fieldName, field] of Object.entries(resource.fields)) {
       collectFieldEnumAliases(aliases, resource, fieldName, field);
     }
   }
-  return aliases;
+  return [...aliases.values()];
 }
 
 function collectFieldEnumAliases(aliases, resource, fieldName, field) {
   if (field.type === 'enum') {
-    aliases.push({
-      name: enumAliasName(resource, fieldName),
-      values: field.values ?? [],
-    });
+    addEnumAlias(aliases, enumAliasName(resource, fieldName), field.values ?? []);
   }
 
   if (field.type === 'object') {
     for (const [childName, childField] of Object.entries(field.fields ?? {})) {
       collectFieldEnumAliases(aliases, resource, `${fieldName}${pascalCase(childName)}`, childField);
+    }
+    for (const variant of Object.values(field.variants ?? {})) {
+      for (const [childName, childField] of Object.entries(variant.fields ?? {})) {
+        if (childField.type === 'enum' && childField.values?.length === 1) {
+          continue;
+        }
+        collectFieldEnumAliases(aliases, resource, `${fieldName}${pascalCase(childName)}`, childField);
+      }
     }
   }
 
@@ -190,7 +242,60 @@ function collectFieldEnumAliases(aliases, resource, fieldName, field) {
   }
 }
 
+function addEnumAlias(aliases, name, values) {
+  const existing = aliases.get(name);
+  if (!existing) {
+    aliases.set(name, {
+      name,
+      values: [...values],
+    });
+    return;
+  }
+
+  existing.values = [...new Set([...existing.values, ...values])];
+}
+
+function collectVariantAliases(resources) {
+  const aliases = [];
+  for (const resource of resources) {
+    for (const [fieldName, field] of Object.entries(resource.fields)) {
+      collectFieldVariantAliases(aliases, resource, fieldName, field);
+    }
+  }
+  return aliases;
+}
+
+function collectFieldVariantAliases(aliases, resource, fieldName, field) {
+  if (field.type === 'object' && field.variants) {
+    aliases.push({
+      name: variantAliasName(resource, fieldName),
+      resource,
+      fieldPath: fieldName,
+      variants: field.variants,
+    });
+  }
+
+  if (field.type === 'object') {
+    for (const [childName, childField] of Object.entries(field.fields ?? {})) {
+      collectFieldVariantAliases(aliases, resource, `${fieldName}${pascalCase(childName)}`, childField);
+    }
+    for (const variant of Object.values(field.variants ?? {})) {
+      for (const [childName, childField] of Object.entries(variant.fields ?? {})) {
+        collectFieldVariantAliases(aliases, resource, `${fieldName}${pascalCase(childName)}`, childField);
+      }
+    }
+  }
+
+  if (field.type === 'array' && field.items) {
+    collectFieldVariantAliases(aliases, resource, `${fieldName}Item`, field.items);
+  }
+}
+
 function enumAliasName(resource, fieldName) {
+  return `${resource.typeName}${pascalCase(fieldName)}`;
+}
+
+function variantAliasName(resource, fieldName) {
   return `${resource.typeName}${pascalCase(fieldName)}`;
 }
 

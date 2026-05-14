@@ -49,9 +49,19 @@ export function normalizeField(field, fieldName = '') {
     normalized.additionalProperties = Boolean(field.additionalProperties);
   }
 
+  if (field.type === 'object' && 'discriminator' in field) {
+    normalized.discriminator = String(field.discriminator);
+  }
+
   if (field.type === 'object' && field.fields && typeof field.fields === 'object') {
     normalized.fields = Object.fromEntries(
       Object.entries(field.fields).map(([childName, childField]) => [childName, normalizeField(childField, childName)]),
+    );
+  }
+
+  if (field.type === 'object' && field.variants && typeof field.variants === 'object' && !Array.isArray(field.variants)) {
+    normalized.variants = Object.fromEntries(
+      Object.entries(field.variants).map(([variantName, variant]) => [variantName, normalizeVariant(variantName, variant, normalized.discriminator)]),
     );
   }
 
@@ -96,6 +106,13 @@ export function inferFieldFromSamples(samples, fieldName, options = {}) {
     return { type: 'unknown', required: Boolean(options.required) };
   }
 
+  if (options.inferVariants === true) {
+    const variantField = inferDiscriminatedObjectField(samples, options.required);
+    if (variantField) {
+      return variantField;
+    }
+  }
+
   const inferred = samples.map((sample) => inferFieldFromValue(sample, fieldName, options));
   return mergeInferredFields(inferred, options.required);
 }
@@ -113,6 +130,7 @@ export function inferFieldFromValue(value, fieldName, options = {}) {
       required,
       items: inferFieldFromSamples(value.filter((item) => item !== null && item !== undefined), `${fieldName}Item`, {
         required: false,
+        inferVariants: true,
       }),
     };
   }
@@ -144,6 +162,10 @@ function mergeInferredFields(fields, required) {
 
   const [first] = fields;
   if (first.type === 'object') {
+    if (fields.every((field) => field.type === 'object' && field.variants && field.discriminator === first.discriminator)) {
+      return mergeVariantObjectFields(fields, required);
+    }
+
     const names = new Set();
     for (const field of fields) {
       for (const childName of Object.keys(field.fields ?? {})) {
@@ -177,6 +199,141 @@ function mergeInferredFields(fields, required) {
   };
 }
 
+function mergeVariantObjectFields(fields, required) {
+  const discriminator = fields[0].discriminator;
+  const variantNames = new Set();
+  for (const field of fields) {
+    for (const variantName of Object.keys(field.variants ?? {})) {
+      variantNames.add(variantName);
+    }
+  }
+
+  return {
+    type: 'object',
+    required: Boolean(required),
+    discriminator,
+    variants: Object.fromEntries([...variantNames].map((variantName) => [
+      variantName,
+      mergeVariantDefinitions(fields.map((field) => field.variants?.[variantName]).filter(Boolean), discriminator, variantName),
+    ])),
+  };
+}
+
+function mergeVariantDefinitions(variants, discriminator, variantName) {
+  const fieldNames = new Set();
+  for (const variant of variants) {
+    for (const fieldName of Object.keys(variant.fields ?? {})) {
+      fieldNames.add(fieldName);
+    }
+  }
+
+  const fields = Object.fromEntries([...fieldNames].sort().map((fieldName) => {
+    const childFields = variants.map((variant) => variant.fields?.[fieldName]).filter(Boolean);
+    const required = childFields.length === variants.length && childFields.every((field) => field.required);
+    return [fieldName, mergeInferredFields(childFields, required)];
+  }));
+  fields[discriminator] = {
+    type: 'enum',
+    values: [variantName],
+    required: true,
+  };
+
+  return { fields };
+}
+
+function normalizeVariant(variantName, variant, discriminator) {
+  const raw = variant && typeof variant === 'object' && !Array.isArray(variant)
+    ? variant
+    : {};
+  const rawFields = raw.fields && typeof raw.fields === 'object' && !Array.isArray(raw.fields)
+    ? raw.fields
+    : {};
+  const normalized = {
+    fields: Object.fromEntries(
+      Object.entries(rawFields).map(([fieldName, field]) => [fieldName, normalizeField(field, fieldName)]),
+    ),
+  };
+
+  if ('additionalProperties' in raw) {
+    normalized.additionalProperties = Boolean(raw.additionalProperties);
+  }
+
+  if (discriminator && !(discriminator in normalized.fields)) {
+    normalized.fields = {
+      [discriminator]: {
+        type: 'enum',
+        values: [variantName],
+        required: true,
+      },
+      ...normalized.fields,
+    };
+  }
+
+  return normalized;
+}
+
+function inferDiscriminatedObjectField(samples, required) {
+  const records = samples.filter((sample) => sample !== null && sample !== undefined);
+  if (records.length === 0 || records.some((sample) => !isPlainRecord(sample))) {
+    return null;
+  }
+
+  for (const discriminator of ['type', 'kind', 'blockType']) {
+    const groups = groupByDiscriminator(records, discriminator);
+    if (!groups) {
+      continue;
+    }
+
+    const signatures = new Set([...groups.values()].map((group) => objectSignature(group[0], discriminator)));
+    if (signatures.size < 2) {
+      continue;
+    }
+
+    return {
+      type: 'object',
+      required: Boolean(required),
+      discriminator,
+      variants: Object.fromEntries([...groups.entries()].map(([variantName, group]) => {
+        const fields = inferFieldsFromData(group, 'collection');
+        fields[discriminator] = {
+          type: 'enum',
+          values: [variantName],
+          required: true,
+        };
+        return [variantName, {
+          fields,
+        }];
+      })),
+    };
+  }
+
+  return null;
+}
+
+function groupByDiscriminator(records, discriminator) {
+  const groups = new Map();
+  for (const record of records) {
+    const value = record[discriminator];
+    if (typeof value !== 'string' || value === '') {
+      return null;
+    }
+
+    if (!groups.has(value)) {
+      groups.set(value, []);
+    }
+    groups.get(value).push(record);
+  }
+
+  return groups.size >= 2 ? groups : null;
+}
+
+function objectSignature(record, discriminator) {
+  return Object.keys(record)
+    .filter((fieldName) => fieldName !== discriminator)
+    .sort()
+    .join('|');
+}
+
 function normalizeRelation(relation, fieldName) {
   return {
     name: String(relation.name ?? relationNameFromField(fieldName)),
@@ -184,6 +341,10 @@ function normalizeRelation(relation, fieldName) {
     toField: String(relation.toField ?? 'id'),
     cardinality: relation.cardinality === 'many' ? 'many' : 'one',
   };
+}
+
+function isPlainRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function relationNameFromField(fieldName) {

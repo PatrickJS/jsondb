@@ -314,6 +314,7 @@ export type JsonDbOptions = {
 export type JsonDbCollection<RecordType> = {
   all(): Promise<RecordType[]>;
   get(id: string): Promise<RecordType | null>;
+  exists(id: string): Promise<boolean>;
   create(record: RecordType): Promise<RecordType>;
   update(id: string, patch: Partial<RecordType>): Promise<RecordType | null>;
   patch(id: string, patch: Partial<RecordType>): Promise<RecordType | null>;

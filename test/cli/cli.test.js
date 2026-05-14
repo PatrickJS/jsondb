@@ -28,6 +28,96 @@ test('CLI schema manifest --out writes relative to --cwd', async () => {
   assert.equal(manifest.collections.users.fields.email.ui.component, 'email');
 });
 
+test('CLI schema infer prints data-inferred resources while ignoring explicit schemas', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "email": { "type": "string", "required": true }
+    },
+    "seed": []
+  }`);
+
+  const { stdout } = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'infer',
+    '--cwd',
+    cwd,
+  ]);
+  const schema = JSON.parse(stdout);
+
+  assert.equal(schema.resources.users.fields.name.type, 'string');
+  assert.equal(schema.resources.users.fields.email, undefined);
+});
+
+test('CLI schema infer can print and write a single inferred resource', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([
+    {
+      id: 'home',
+      blocks: [
+        { type: 'chart', chartId: 'chart_1' },
+        { type: 'metric', title: 'Revenue', source: 'orders', aggregate: 'sum' },
+      ],
+    },
+  ]));
+
+  const single = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'infer',
+    'pages',
+    '--cwd',
+    cwd,
+  ]);
+  const resource = JSON.parse(single.stdout);
+
+  assert.equal(resource.fields.blocks.items.discriminator, 'type');
+
+  const written = await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'infer',
+    'pages',
+    '--cwd',
+    cwd,
+    '--out',
+    './db/pages.schema.jsonc',
+  ]);
+  const schema = JSON.parse(await readFile(path.join(cwd, 'db/pages.schema.jsonc'), 'utf8'));
+
+  assert.match(written.stdout, /Generated db\/pages\.schema\.jsonc/);
+  assert.equal(schema.kind, 'collection');
+  assert.equal(schema.fields.blocks.items.variants.chart.fields.chartId.type, 'string');
+  assert.equal(schema.seed, undefined);
+});
+
+test('CLI schema infer --out requires a single resource', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+
+  await assert.rejects(
+    () => execFileAsync(process.execPath, [
+      path.resolve('src/cli.js'),
+      'schema',
+      'infer',
+      '--cwd',
+      cwd,
+      '--out',
+      './db/users.schema.jsonc',
+    ]),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /SCHEMA_INFER_OUT_REQUIRES_RESOURCE/);
+      return true;
+    },
+  );
+});
+
 test('CLI types --out writes relative to --cwd', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
@@ -48,7 +138,7 @@ test('CLI types --out writes relative to --cwd', async () => {
 });
 
 test('CLI subcommands print focused help without running the command', async () => {
-  await assertCliHelp(['schema', '--help'], /Usage:\n  jsondb schema \[resource\]/);
+  await assertCliHelp(['schema', '--help'], /jsondb schema infer \[resource\] \[--out <file>\]/);
   await assertCliHelp(['types', '--help'], /Usage:\n  jsondb types \[--watch\] \[--out <file>\]/);
   await assertCliHelp(['doctor', '--help'], /Usage:\n  jsondb doctor \[--strict\] \[--json\]/);
   await assertCliHelp(['serve', '--help'], /Usage:\n  jsondb serve \[--host <host>\] \[--port <port>\]/);
@@ -60,7 +150,7 @@ test('CLI subcommand help does not load project config', async () => {
   await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
   await writeConfig(cwd, 'throw new Error("broken config should not load for help");');
 
-  await assertCliHelp(['schema', '--help'], /Usage:\n  jsondb schema \[resource\]/, cwd);
+  await assertCliHelp(['schema', '--help'], /jsondb schema infer \[resource\] \[--out <file>\]/, cwd);
   await assertCliHelp(['types', '--help'], /Usage:\n  jsondb types \[--watch\] \[--out <file>\]/, cwd);
   await assertCliHelp(['doctor', '--help'], /Usage:\n  jsondb doctor \[--strict\] \[--json\]/, cwd);
   await assertCliHelp(['serve', '--help'], /Usage:\n  jsondb serve \[--host <host>\] \[--port <port>\]/, cwd);
