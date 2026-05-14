@@ -57,6 +57,59 @@ test('nested fixture folders are discovered and keep relative source paths', asy
   ]);
 });
 
+test('nested fixture duplicate resource names produce actionable diagnostics', async () => {
+  const cwd = await makeProject();
+  await mkdir(path.join(cwd, 'db/cms'), { recursive: true });
+  await mkdir(path.join(cwd, 'db/marketing'), { recursive: true });
+  await writeFile(path.join(cwd, 'db/cms/pages.json'), `${JSON.stringify([{ id: 'cms-home' }])}\n`, 'utf8');
+  await writeFile(path.join(cwd, 'db/marketing/pages.json'), `${JSON.stringify([{ id: 'marketing-home' }])}\n`, 'utf8');
+
+  const config = await loadConfig({ cwd });
+
+  await assert.rejects(
+    () => syncJsonFixtureDb(config),
+    (error) => {
+      assert.equal(error.diagnostics?.[0]?.code, 'DUPLICATE_RESOURCE_NAME');
+      assert.match(error.diagnostics[0].message, /Duplicate resource name "pages"/);
+      assert.match(error.diagnostics[0].message, /db\/cms\/pages\.json/);
+      assert.match(error.diagnostics[0].message, /db\/marketing\/pages\.json/);
+      assert.match(error.diagnostics[0].hint, /resources\.naming/);
+      return true;
+    },
+  );
+});
+
+test('resource naming strategies and customizeResource support duplicate filenames', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    resources: {
+      naming: 'folder-prefixed',
+      customizeResource({ file, defaultResource }) {
+        if (file === 'db/marketing/pages.json') {
+          return {
+            ...defaultResource,
+            name: 'landingPages'
+          };
+        }
+        return defaultResource;
+      }
+    }
+  };`);
+  await mkdir(path.join(cwd, 'db/cms'), { recursive: true });
+  await mkdir(path.join(cwd, 'db/marketing'), { recursive: true });
+  await writeFile(path.join(cwd, 'db/cms/pages.json'), `${JSON.stringify([{ id: 'cms-home' }])}\n`, 'utf8');
+  await writeFile(path.join(cwd, 'db/marketing/pages.json'), `${JSON.stringify([{ id: 'marketing-home' }])}\n`, 'utf8');
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+
+  assert.deepEqual(Object.keys(result.schema.resources), ['cmsPages', 'landingPages']);
+  assert.equal(result.schema.resources.cmsPages.routePath, '/cms-pages');
+  assert.equal(result.schema.resources.landingPages.typeName, 'LandingPage');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/cmsPages.json'), 'utf8')), [{ id: 'cms-home' }]);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/landingPages.json'), 'utf8')), [{ id: 'marketing-home' }]);
+});
+
 test('CSV fixtures infer schema and refresh runtime state when the source hash changes', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.csv', [

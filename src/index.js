@@ -1,4 +1,5 @@
 export { loadConfig } from './config.js';
+export { mergeManifest, parseFixturePath, resourceNameFromPath } from './config-public.js';
 export { createJsonDbClient } from './client.js';
 export { openJsonFixtureDb, JsonFixtureDb, JsonDbCollection, JsonDbDocument } from './db.js';
 export { runJsonDbDoctor } from './doctor.js';

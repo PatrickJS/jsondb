@@ -193,6 +193,129 @@ test('REST collection reads support select offset and limit', async () => {
   ]);
 });
 
+test('REST resource .json extension uses the JSON format', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/users.json'),
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers['content-type'], /application\/json/);
+  assert.deepEqual(response.json(), [
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]);
+});
+
+test('REST formats can override default and json resource rendering', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({
+    cwd,
+    rest: {
+      formats: {
+        default({ resource, data }) {
+          return {
+            body: `# ${resource.name}\n${data.length} records\n`,
+            contentType: 'text/markdown; charset=utf-8',
+          };
+        },
+        json({ data }) {
+          return {
+            body: JSON.stringify({ data }),
+            contentType: 'application/vnd.custom+json',
+          };
+        },
+      },
+    },
+  });
+  const defaultResponse = makeResponse();
+  const jsonResponse = makeResponse();
+
+  await handleRestRequest(db, makeRequest('GET'), defaultResponse, new URL('http://jsondb.local/users'));
+  await handleRestRequest(db, makeRequest('GET'), jsonResponse, new URL('http://jsondb.local/users.json'));
+
+  assert.equal(defaultResponse.body, '# users\n1 records\n');
+  assert.match(defaultResponse.headers['content-type'], /text\/markdown/);
+  assert.deepEqual(JSON.parse(jsonResponse.body), { data: [{ id: 'u_1', name: 'Ada Lovelace' }] });
+  assert.match(jsonResponse.headers['content-type'], /application\/vnd\.custom\+json/);
+});
+
+test('REST formats can render user-defined markdown and html extensions', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({
+    cwd,
+    rest: {
+      formats: {
+        md({ resource, data }) {
+          return {
+            body: `# ${resource.name}\n${data[0].name}\n`,
+            contentType: 'text/markdown; charset=utf-8',
+          };
+        },
+        html({ data }) {
+          return {
+            body: `<!doctype html><p>${data.name}</p>`,
+            contentType: 'text/html; charset=utf-8',
+          };
+        },
+      },
+    },
+  });
+  const markdownResponse = makeResponse();
+  const htmlResponse = makeResponse();
+
+  await handleRestRequest(db, makeRequest('GET'), markdownResponse, new URL('http://jsondb.local/users.md'));
+  await handleRestRequest(db, makeRequest('GET'), htmlResponse, new URL('http://jsondb.local/users/u_1.html'));
+
+  assert.equal(markdownResponse.body, '# users\nAda Lovelace\n');
+  assert.match(markdownResponse.headers['content-type'], /text\/markdown/);
+  assert.equal(htmlResponse.body, '<!doctype html><p>Ada Lovelace</p>');
+  assert.match(htmlResponse.headers['content-type'], /text\/html/);
+});
+
+test('REST resource requests reject unknown format extensions', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(db, makeRequest('GET'), response, new URL('http://jsondb.local/users.xml'));
+
+  assert.equal(response.status, 404);
+  assert.equal(response.json().error.code, 'REST_UNKNOWN_FORMAT');
+  assert.match(response.json().error.hint, /json/);
+});
+
 test('REST single record reads support select', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'posts.json', JSON.stringify([
