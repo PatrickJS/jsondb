@@ -93,6 +93,34 @@ test('server source watch handles watcher error events without crashing', async 
   watcher.close();
 });
 
+test('server source watch ignores dot folders inside db', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const published = [];
+  const fsWatcher = new EventEmitter();
+  fsWatcher.close = () => {};
+
+  const watcher = await watchSourceDir(db, {
+    publish(payload) {
+      published.push(payload);
+    },
+  }, {
+    watch(_directory, _options, listener) {
+      fsWatcher.listener = listener;
+      return fsWatcher;
+    },
+  });
+
+  fsWatcher.listener('change', '.jsondb/state/users.json');
+  fsWatcher.listener('change', '.cache/internal.json');
+  await new Promise((resolve) => setTimeout(resolve, 125));
+
+  assert.deepEqual(published, []);
+  watcher.close();
+});
+
 test('request handler supports scoped Vite routes without root REST routes', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([

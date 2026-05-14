@@ -10,13 +10,11 @@ import { JsonDbDocument } from './document.js';
 export async function openJsonFixtureDb(options = {}) {
   const config = await loadConfig(options);
   const syncOnOpen = options.syncOnOpen ?? true;
-  const shouldUseJsonSync = syncOnOpen && allResourcesUseDefaultJsonRuntime(config);
-  const project = shouldUseJsonSync
+  const project = syncOnOpen
     ? await syncJsonFixtureDb(config, { allowErrors: options.allowSourceErrors === true })
     : await loadProjectSchema(config);
   const db = new JsonFixtureDb(config, project.resources, project.diagnostics);
-
-  if (syncOnOpen && !shouldUseJsonSync) {
+  if (syncOnOpen) {
     await db.runtime.hydrate();
   }
 
@@ -88,22 +86,4 @@ export class JsonFixtureDb {
 
 export function stateFileForDebug(db, resourceName) {
   return path.join(db.config.stateDir, 'state', `${resourceName}.json`);
-}
-
-function allResourcesUseDefaultJsonRuntime(config) {
-  const defaultRuntime = config.runtime?.default ?? 'json';
-  if (defaultRuntime !== 'json') {
-    return false;
-  }
-
-  for (const [name, resourceConfig] of Object.entries(config.resources ?? {})) {
-    if (name === 'naming' || name === 'customizeResource' || name === 'customizeField') {
-      continue;
-    }
-    if (resourceConfig && typeof resourceConfig === 'object' && resourceConfig.runtime && resourceConfig.runtime !== 'json') {
-      return false;
-    }
-  }
-
-  return true;
 }

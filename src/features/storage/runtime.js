@@ -1,6 +1,7 @@
 import { jsonDbError, listChoices } from '../../errors.js';
 import { createJsonRuntimeAdapter } from './json.js';
 import { createMemoryRuntimeAdapter } from './memory.js';
+import { createSourceRuntimeAdapter } from './source.js';
 import { createStaticRuntimeAdapter } from './static.js';
 import { createRuntimeEventHub } from './events.js';
 
@@ -73,6 +74,7 @@ function builtinAdapters(config) {
   return [
     createJsonRuntimeAdapter(config),
     createMemoryRuntimeAdapter(config),
+    createSourceRuntimeAdapter(config),
     createStaticRuntimeAdapter(config),
   ];
 }

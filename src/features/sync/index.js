@@ -3,8 +3,9 @@ import { loadProjectSchema, makeGeneratedSchema } from '../../schema.js';
 import { generateSchemaManifest } from '../../schema-manifest.js';
 import { generateTypes } from '../../types.js';
 import { readJsonState, writeJsonState } from '../runtime/state.js';
+import { createRuntime } from '../storage/runtime.js';
+import { writeSourceMetadata } from '../storage/source.js';
 import { writeText } from '../../fs-utils.js';
-import { syncStateResource } from './mirror-state.js';
 import { ensureRuntimeDirs } from './runtime-dirs.js';
 import { writeGeneratedIdsToSources } from './source-writes.js';
 
@@ -52,9 +53,9 @@ export async function syncJsonFixtureDb(config, options = {}) {
   const sourceMetadata = await readJsonState(sourceMetadataPath, { resources: {} });
   sourceMetadata.resources ??= {};
 
-  for (const resource of project.resources) {
-    await syncStateResource(config, resource, sourceMetadata);
-  }
+  const runtime = createRuntime(config, project.resources);
+  await runtime.hydrate();
+  await writeSourceMetadata(config, project.resources, sourceMetadata);
   await writeJsonState(sourceMetadataPath, sourceMetadata);
 
   logs.push('Synced runtime mirror');

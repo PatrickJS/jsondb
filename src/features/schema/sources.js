@@ -25,6 +25,9 @@ async function listSourceFilesInDirectory(directory, prefix = '') {
   for (const entry of entries) {
     const relativePath = prefix ? path.join(prefix, entry.name) : entry.name;
     if (entry.isDirectory()) {
+      if (entry.name.startsWith('.')) {
+        continue;
+      }
       files.push(...await listSourceFilesInDirectory(path.join(directory, entry.name), relativePath));
       continue;
     }
