@@ -145,6 +145,12 @@ export class SqliteJsonDbCollection {
     return row ? deserializeRow(this.resource, row) : null;
   }
 
+  async exists(id) {
+    const idField = quoteIdentifier(this.resource.idField);
+    const row = this.database.prepare(`SELECT 1 as found FROM ${this.table} WHERE ${idField} = ?`).get(String(id));
+    return Boolean(row);
+  }
+
   async create(record) {
     const fields = Object.keys(this.resource.fields);
     const nextRecord = this.config.defaults?.applyOnCreate === false

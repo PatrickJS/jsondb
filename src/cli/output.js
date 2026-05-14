@@ -25,6 +25,7 @@ Usage:
   jsondb sync
   jsondb types [--watch] [--out <file>]
   jsondb schema [resource]
+  jsondb schema infer [resource] [--out <file>]
   jsondb schema manifest [--out <file>]
   jsondb schema validate
   jsondb doctor [--strict] [--json]
@@ -58,11 +59,12 @@ export function printSchemaHelp() {
 
 Usage:
   jsondb schema [resource]
+  jsondb schema infer [resource] [--out <file>]
   jsondb schema manifest [--out <file>]
   jsondb schema validate
 
 Options:
-  --out <file>   Write schema manifest output to this path
+  --out <file>   Write schema manifest or inferred resource schema output to this path
   --cwd <dir>     Project directory
   --config <file> Config file path
 `);

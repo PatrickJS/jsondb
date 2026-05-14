@@ -15,6 +15,8 @@ Most projects should start with the happy path defaults:
 
 That is the main value: fixture files become a browsable local data source and a writable REST API with no config, giving teams a realistic mock while the eventual database is still unknown.
 
+jsondb is data-first by default. It should infer useful schemas, generated types, REST routes, GraphQL metadata, and viewer metadata from seed data whenever the examples are clear enough. Add schema when you want to lock in a stricter contract, describe fields, define defaults or constraints, declare relations, or capture future intent that is not represented in the current seed data.
+
 By default jsondb runs in `mode: 'mirror'`, so app writes go into `.jsondb/state` and source fixtures stay clean. Switch to `mode: 'source'` only when you intentionally want jsondb to write generated ids back to plain `.json` fixtures.
 
 Local responses include a small default delay range of `30-100ms` so loading states are visible during UI work. Configure `mock.delay` to `0` to disable it, `50` for a fixed delay, or `[50, 300]` for a different range.
@@ -128,7 +130,7 @@ Use this table to start with defaults and then jump to the config only when a us
 | Import spreadsheet or product data      | `db/*.csv` or viewer CSV import                                             | CSVs belong in another folder: [different fixture folder](#different-fixture-folder)                   |
 | Keep another schema/data format         | Built-in JSON, JSONC, CSV, or `.schema.mjs` readers                         | Add a [source reader](#source-readers) that returns jsondb schema/data inputs                          |
 | Build model-driven admin/CMS screens    | Nested fixtures such as `db/cms/pages.schema.jsonc`                         | Forms need committed field metadata: [schema manifest output](#schema-manifest-output)                 |
-| Evolve fuzzy data into a contract       | Add `db/<name>.schema.json` or `.schema.jsonc`                              | Schema drift should fail instead of warn: [schema strictness](#schema-strictness)                      |
+| Evolve fuzzy data into a contract       | Data-first fixtures, `schema infer`, and `doctor` suggestions               | Schema drift should fail instead of warn: [schema strictness](#schema-strictness)                      |
 | Find fixture consistency issues         | `npm run db -- doctor`                                                      | CI should fail on warnings: `npm run db -- check --strict`                                            |
 | Start from types before records exist   | Schema-first fixtures with empty `seed`                                     | You want mock records generated from schema: [generated schema seed data](#generated-schema-seed-data) |
 | Exercise larger local payloads          | Default server settings                                                     | Requests exceed the local body limit: [server options](#server-options)                                |
@@ -184,7 +186,17 @@ See [jsondb.config.example.mjs](./jsondb.config.example.mjs) for a commented con
 
 ## Add Schema When It Pays For It
 
-Data-first fixtures are enough until the shape matters. When you need defaults, enums, required fields, descriptions, constraints, or stricter write validation, add `db/<name>.schema.json`, `db/<name>.schema.jsonc`, or `db/<name>.schema.mjs`.
+Data-first fixtures are enough until the shape matters. jsondb infers contracts from seed records, including common polymorphic arrays that use discriminators such as `type`, `kind`, or `blockType`. When seed data is ambiguous, incomplete, or too loose for the app contract, use schema to lock the current shape down.
+
+Inspect what jsondb would infer from data, even when an explicit schema already exists:
+
+```bash
+npm run db -- schema infer
+npm run db -- schema infer users
+npm run db -- schema infer users --out db/users.schema.jsonc
+```
+
+When you need defaults, enums, required fields, descriptions, constraints, relations, future variants, or stricter write validation, add `db/<name>.schema.json`, `db/<name>.schema.jsonc`, or `db/<name>.schema.mjs`.
 
 Create `db/users.schema.json`:
 
@@ -483,13 +495,15 @@ npm run db -- doctor
 It reports existing schema/source diagnostics plus advisory fixture health findings such as:
 
 - likely relations, for example `todos.userId -> users.id`
+- ambiguous polymorphic arrays where explicit schema would make the contract clearer
+- explicit schemas that appear to match data inference and may be removable
 - duplicate ids inside a collection
 - mixed id value types like `"1"` and `1`
 - inconsistent field types like `done: true` and `done: "yes"`
 - likely relation fields with values missing from the target collection
 - configured forks with missing folders, invalid names, or schema/source diagnostics
 
-Relation inference is only a suggestion. It does not rewrite schema files and it does not make `?expand=user` work until you add explicit relation metadata.
+Doctor findings are suggestions. They do not rewrite fixtures or schema files. When a schema would help, doctor includes a command such as `jsondb schema infer pages --out db/pages.schema.jsonc` so you can lock the current inferred shape into a schema source intentionally.
 
 For scripts or CI, use JSON output or strict mode:
 
@@ -695,6 +709,9 @@ await users.create({
   email: 'grace@example.com',
   role: 'user',
 });
+
+const ada = await users.get('u_1');
+const hasGrace = await users.exists('u_2');
 ```
 
 Import generated `JsonDbTypes` from `.jsondb/types/index.ts` or from a committed output file when you want typed collection names and records.
@@ -890,6 +907,8 @@ export type User = {
 
 For apps and CI, you can also configure a [committed generated types](#committed-generated-types) output file.
 
+Use `types.commitOutFile` for any committed shared path that both backend and frontend code can import, such as `./src/shared/jsondb.types.ts`. The name is historical: the output does not need to live in frontend-only generated code.
+
 ## Hono And SQLite Starter Generation
 
 When fixtures and schemas have settled enough to graduate toward a real database API, generate a Hono starter:
@@ -919,6 +938,23 @@ app.route('/api', await createJsonDbHonoApp({
   },
   api: ['rest'],
 }));
+```
+
+Apps that already own their Hono instance can register only the REST routes and wrap them with hooks:
+
+```ts
+import { registerRestRoutes } from 'jsondb/hono';
+
+registerRestRoutes(app, db, {
+  prefix: '/api',
+  resources: ['pages', 'charts'],
+  hooks: {
+    beforeCreate({ c }) {
+      // Return a Hono response to short-circuit auth or permission checks.
+      if (!c.get('session')) return c.json({ error: 'Unauthorized' }, 401);
+    },
+  },
+});
 ```
 
 ## Configuration Details

@@ -253,6 +253,10 @@ function constraintHint(constraint) {
 }
 
 function validateObjectFields(value, field, context) {
+  if (field.discriminator && field.variants) {
+    return validateVariantObjectFields(value, field, context);
+  }
+
   const diagnostics = [];
   const fields = field.fields ?? {};
 
@@ -300,6 +304,53 @@ function validateObjectFields(value, field, context) {
   }
 
   return diagnostics;
+}
+
+function validateVariantObjectFields(value, field, context) {
+  const discriminator = field.discriminator;
+  const discriminatorValue = value[discriminator];
+  const variants = field.variants ?? {};
+
+  if (discriminatorValue === undefined || discriminatorValue === null || discriminatorValue === '') {
+    return [{
+      code: 'SCHEMA_REQUIRED_FIELD_MISSING',
+      severity: 'error',
+      resource: context.resource.name,
+      field: `${context.fieldPath}.${discriminator}`,
+      message: `${context.resource.name} record is missing required field "${context.fieldPath}.${discriminator}"`,
+    }];
+  }
+
+  const variant = variants[String(discriminatorValue)];
+  if (!variant) {
+    return [{
+      code: 'SCHEMA_VARIANT_UNKNOWN',
+      severity: 'error',
+      resource: context.resource.name,
+      field: `${context.fieldPath}.${discriminator}`,
+      message: `${context.resource.name} field "${context.fieldPath}.${discriminator}" expected one of ${Object.keys(variants).map((value) => JSON.stringify(value)).join(', ')} but received ${JSON.stringify(discriminatorValue)}`,
+      details: {
+        discriminator,
+        value: discriminatorValue,
+        variants: Object.keys(variants),
+      },
+    }];
+  }
+
+  const variantFields = {
+    [discriminator]: {
+      type: 'enum',
+      values: [String(discriminatorValue)],
+      required: true,
+    },
+    ...(variant.fields ?? {}),
+  };
+
+  return validateObjectFields(value, {
+    type: 'object',
+    fields: variantFields,
+    additionalProperties: variant.additionalProperties ?? field.additionalProperties,
+  }, context);
 }
 
 function typeMismatch(context, expected, value) {

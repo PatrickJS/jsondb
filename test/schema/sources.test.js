@@ -78,6 +78,103 @@ test('schema fields support nullable datetime arrays and flexible object shapes'
   assert.deepEqual(state[0].tags, ['renewal', 'priority']);
 });
 
+test('data-first arrays infer discriminated object variants and TypeScript unions', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([
+    {
+      id: 'home',
+      blocks: [
+        {
+          type: 'chart',
+          chartId: 'chart_1',
+        },
+        {
+          type: 'metric',
+          title: 'Revenue',
+          source: 'orders',
+          aggregate: 'sum',
+        },
+      ],
+    },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+  const generated = (await generateTypes(config, { project })).content;
+  const blocks = project.schema.resources.pages.fields.blocks;
+
+  assert.equal(blocks.items.discriminator, 'type');
+  assert.deepEqual(Object.keys(blocks.items.variants), ['chart', 'metric']);
+  assert.equal(blocks.items.variants.chart.fields.type.values[0], 'chart');
+  assert.equal(blocks.items.variants.chart.fields.chartId.required, true);
+  assert.equal(blocks.items.variants.metric.fields.title.required, true);
+  assert.match(generated, /export type PageBlocksItem =\n  \| \{/);
+  assert.match(generated, /type: "chart";/);
+  assert.match(generated, /chartId: string;/);
+  assert.match(generated, /type: "metric";/);
+  assert.match(generated, /aggregate: string;/);
+  assert.match(generated, /blocks: Array<PageBlocksItem>;/);
+});
+
+test('data-first polymorphic arrays without a stable discriminator use normal object inference', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([
+    {
+      id: 'home',
+      blocks: [
+        {
+          chartId: 'chart_1',
+        },
+        {
+          title: 'Revenue',
+          source: 'orders',
+        },
+      ],
+    },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+  const blocks = project.schema.resources.pages.fields.blocks;
+
+  assert.equal(blocks.items.discriminator, undefined);
+  assert.equal(blocks.items.variants, undefined);
+  assert.equal(blocks.items.fields.chartId.required, false);
+  assert.equal(blocks.items.fields.title.required, false);
+});
+
+test('nested enum aliases use deterministic full field paths', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "blocks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "fields": {
+            "type": {
+              "type": "enum",
+              "values": ["chart", "metric"],
+              "required": true
+            }
+          }
+        }
+      }
+    },
+    "seed": []
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const generated = (await generateTypes(config)).content;
+
+  assert.match(generated, /export type PageBlocksItemType = "chart" \| "metric";/);
+  assert.match(generated, /type: PageBlocksItemType;/);
+  assert.doesNotMatch(generated, /type: PageType;/);
+});
+
 test('schema fields can declare to-one relation metadata', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'authors.schema.jsonc', `{

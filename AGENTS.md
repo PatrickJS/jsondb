@@ -13,6 +13,13 @@ Core responsibilities:
 - Sync a writable runtime mirror into `.jsondb/state`, using source hashes for JSON/JSONC/CSV refreshes.
 - Expose a package API, CLI, and small local REST server.
 
+Product direction:
+
+- JSONDB is data-first by default. Prefer inferring useful local contracts from fixture seed data before adding new required schema surface area.
+- Explicit schema is the upgrade path for stricter contracts, field descriptions, defaults, constraints, relations, future variants, and app metadata that seed data cannot prove.
+- When inference is ambiguous, emit diagnostics and `doctor` suggestions instead of guessing too hard or forcing schema immediately.
+- Avoid broad JSON Schema compatibility unless the project explicitly chooses it. Focus JSONDB-native features on the local fixture workflow, generated types, REST/GraphQL metadata, and runtime mirror behavior.
+
 Important files:
 
 - `SPEC.md`: product behavior and acceptance criteria.
@@ -99,6 +106,7 @@ If a smoke command writes `.jsondb/` inside `examples/basic`, remove those gener
 - Preserve support for Node.js 20 and newer.
 - Keep schema source support focused on `.json`, `.jsonc`, `.csv`, `.schema.json`, `.schema.jsonc`, and `.schema.mjs`.
 - Do not add TypeScript schema execution in v1 without adding an explicit loader/build story.
+- When adding schema features, first ask whether the same value can be inferred from fixtures. If not, add the smallest JSONDB-native schema shape and pair it with `doctor` guidance when useful.
 - Schema files are authoritative in mixed mode; data files provide seed records.
 - Default local behavior for unknown fields is warning, with strict mode available through `schema.unknownFields: 'error'`.
 - Defaults should apply on create and safe additive mirror sync unless config disables them.

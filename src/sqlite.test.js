@@ -76,6 +76,8 @@ test('SQLite adapter supports collection and document CRUD when node:sqlite is a
     });
 
     assert.deepEqual(await db.collection('users').get('1'), created);
+    assert.equal(await db.collection('users').exists('1'), true);
+    assert.equal(await db.collection('users').exists('missing'), false);
     assert.deepEqual(await db.collection('chart-mappings').create({
       id: 'mapping_1',
       name: 'Default',

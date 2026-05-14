@@ -70,6 +70,87 @@ test('doctor reports duplicate ids and inconsistent field types', async () => {
   assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_INCONSISTENT_FIELD_TYPES' && finding.field === 'done'), true);
 });
 
+test('doctor suggests schema when polymorphic data cannot be inferred confidently', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'pages.json', JSON.stringify([
+    {
+      id: 'home',
+      blocks: [
+        {
+          chartId: 'chart_1',
+        },
+        {
+          title: 'Revenue',
+          source: 'orders',
+        },
+      ],
+    },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+  const finding = result.findings.find((candidate) => candidate.code === 'DOCTOR_SCHEMA_RECOMMENDED');
+
+  assert.equal(finding.severity, 'info');
+  assert.equal(finding.resource, 'pages');
+  assert.equal(finding.field, 'blocks');
+  assert.match(finding.message, /pages\.blocks/);
+  assert.match(finding.hint, /jsondb schema infer pages --out db\/pages\.schema\.jsonc/);
+});
+
+test('doctor reports explicit schemas that match data inference', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    }
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+  const finding = result.findings.find((candidate) => candidate.code === 'DOCTOR_SCHEMA_MATCHES_INFERENCE');
+
+  assert.equal(finding.severity, 'info');
+  assert.equal(finding.resource, 'users');
+  assert.match(finding.message, /users schema matches inferred data/);
+});
+
+test('doctor keeps schema removal quiet when schema contains non-inferable contract value', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]));
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": {
+        "type": "string",
+        "required": true,
+        "description": "Stable user id."
+      },
+      "name": { "type": "string", "required": true }
+    }
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const result = await runJsonDbDoctor(config);
+
+  assert.equal(result.findings.some((finding) => finding.code === 'DOCTOR_SCHEMA_MATCHES_INFERENCE'), false);
+});
+
 test('doctor validates configured fork folders', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
