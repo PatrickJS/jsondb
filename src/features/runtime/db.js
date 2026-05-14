@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { loadConfig } from '../../config.js';
 import { jsonDbError, listChoices } from '../../errors.js';
+import { resolveResource, resourceAliasCollisionGroups } from '../../names.js';
 import { loadProjectSchema } from '../../schema.js';
 import { syncJsonFixtureDb } from '../../sync.js';
 import { createRuntime } from '../storage/runtime.js';
@@ -25,6 +26,7 @@ export class JsonFixtureDb {
   constructor(config, resources, diagnostics = []) {
     this.config = config;
     this.resources = new Map(resources.map((resource) => [resource.name, resource]));
+    assertNoResourceAliasCollisions(this.resources);
     this.diagnostics = diagnostics;
     this.schemaVersion = Date.now();
     this.runtime = createRuntime(config, resources);
@@ -42,7 +44,7 @@ export class JsonFixtureDb {
   }
 
   requireResource(name, kind) {
-    const resource = this.resources.get(name);
+    const { resource, candidates } = resolveResource(this.resources, name);
     if (!resource) {
       throw jsonDbError(
         'DB_UNKNOWN_RESOURCE',
@@ -52,6 +54,8 @@ export class JsonFixtureDb {
           hint: `Use one of: ${listChoices(this.resourceNames())}.`,
           details: {
             resource: name,
+            requestedResource: name,
+            normalizedCandidates: candidates,
             availableResources: this.resourceNames(),
           },
         },
@@ -86,4 +90,28 @@ export class JsonFixtureDb {
 
 export function stateFileForDebug(db, resourceName) {
   return path.join(db.config.stateDir, 'state', `${resourceName}.json`);
+}
+
+function assertNoResourceAliasCollisions(resources) {
+  const collisions = resourceAliasCollisionGroups(resources);
+  if (collisions.length === 0) {
+    return;
+  }
+
+  const collision = collisions[0];
+  throw jsonDbError(
+    'DB_RESOURCE_ALIAS_COLLISION',
+    `Resource aliases are ambiguous for "${collision.alias}".`,
+    {
+      status: 400,
+      hint: 'Rename one resource so its camelCase and kebab-case aliases are unique.',
+      details: {
+        alias: collision.alias,
+        aliases: collision.aliases,
+        resources: collision.resources,
+        candidates: collision.candidates,
+        collisions,
+      },
+    },
+  );
 }

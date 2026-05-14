@@ -313,14 +313,15 @@ export function renderJsonDbViewer(options = {}) {
     }
 
     async function selectResource(name) {
-      state.selected = state.resources.find((resource) => resource.name === name);
+      const resourceName = resolveResourceName(name);
+      state.selected = state.resources.find((resource) => resource.name === resourceName);
       if (!state.selected) {
         return;
       }
-      rememberResource(name);
+      rememberResource(resourceName);
 
       document.querySelectorAll('[data-resource]').forEach((button) => {
-        button.className = button.dataset.resource === name ? ACTIVE_RESOURCE_BUTTON_CLASS : RESOURCE_BUTTON_CLASS;
+        button.className = button.dataset.resource === resourceName ? ACTIVE_RESOURCE_BUTTON_CLASS : RESOURCE_BUTTON_CLASS;
       });
 
       els.resourceTitle.textContent = state.selected.name;
@@ -725,15 +726,17 @@ export function renderJsonDbViewer(options = {}) {
     }
 
     function resolveInitialResourceName(preferredResourceName) {
-      if (preferredResourceName && hasResource(preferredResourceName)) {
-        return preferredResourceName;
+      const preferred = resolveResourceName(preferredResourceName);
+      if (preferred) {
+        return preferred;
       }
 
       const params = new URLSearchParams(window.location.search);
       const queryResource = params.get('resource');
       if (queryResource) {
-        if (hasResource(queryResource)) {
-          return queryResource;
+        const resolvedQueryResource = resolveResourceName(queryResource);
+        if (resolvedQueryResource) {
+          return resolvedQueryResource;
         }
         clearRememberedResource(true);
         return state.resources[0]?.name;
@@ -741,8 +744,9 @@ export function renderJsonDbViewer(options = {}) {
 
       const storedResource = localStorage.getItem('jsondb:selectedResource');
       if (storedResource) {
-        if (hasResource(storedResource)) {
-          return storedResource;
+        const resolvedStoredResource = resolveResourceName(storedResource);
+        if (resolvedStoredResource) {
+          return resolvedStoredResource;
         }
         clearRememberedResource(false);
       }
@@ -755,7 +759,42 @@ export function renderJsonDbViewer(options = {}) {
     }
 
     function hasResource(name) {
-      return state.resources.some((resource) => resource.name === name);
+      return Boolean(resolveResourceName(name));
+    }
+
+    function resolveResourceName(name) {
+      if (!name) {
+        return null;
+      }
+      for (const candidate of resourceNameCandidates(name)) {
+        if (state.resources.some((resource) => resource.name === candidate)) {
+          return candidate;
+        }
+      }
+      return null;
+    }
+
+    function resourceNameCandidates(value) {
+      const exact = String(value);
+      return [...new Set([exact, camelCase(exact), kebabCase(exact)])];
+    }
+
+    function camelCase(value) {
+      return words(value).map((word, index) => (
+        index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1)
+      )).join('');
+    }
+
+    function kebabCase(value) {
+      return words(value).join('-');
+    }
+
+    function words(value) {
+      return String(value)
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .split(/[^A-Za-z0-9]+/)
+        .filter(Boolean)
+        .map((part) => part.toLowerCase());
     }
 
     function rememberResource(name) {

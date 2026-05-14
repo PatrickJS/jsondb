@@ -79,6 +79,65 @@ test('nested fixture duplicate resource names produce actionable diagnostics', a
   );
 });
 
+test('resource aliases that collapse across camelCase and kebab-case fail fast', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    resources: {
+      customizeResource({ file, defaultResource }) {
+        if (file === 'db/chart-mappings.json') {
+          return { ...defaultResource, name: 'chart-mappings' };
+        }
+        return defaultResource;
+      }
+    }
+  };`);
+  await writeFixture(cwd, 'chartMappings.json', JSON.stringify([{ id: 'camel' }]));
+  await writeFixture(cwd, 'chart-mappings.json', JSON.stringify([{ id: 'kebab' }]));
+
+  const config = await loadConfig({ cwd });
+  const rejectsWithAliasCollision = (error) => {
+    assert.equal(error.diagnostics?.[0]?.code, 'RESOURCE_ALIAS_COLLISION');
+    assert.match(error.diagnostics[0].message, /Resource aliases are ambiguous/);
+    assert.deepEqual(error.diagnostics[0].details.alias, 'chart-mappings');
+    assert.deepEqual(error.diagnostics[0].details.resources, ['chart-mappings', 'chartMappings']);
+    return true;
+  };
+
+  await assert.rejects(
+    () => syncJsonFixtureDb(config),
+    rejectsWithAliasCollision,
+  );
+  await assert.rejects(
+    () => syncJsonFixtureDb(config, { allowErrors: true }),
+    rejectsWithAliasCollision,
+  );
+});
+
+test('path-derived resource names that collapse before aliases still fail fast', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    resources: {
+      naming: 'folder-prefixed'
+    }
+  };`);
+  await mkdir(path.join(cwd, 'db/chart'), { recursive: true });
+  await writeFile(path.join(cwd, 'db/chart/mapping.json'), `${JSON.stringify([{ id: 'nested' }])}\n`, 'utf8');
+  await writeFixture(cwd, 'chart-mapping.json', JSON.stringify([{ id: 'flat' }]));
+
+  const config = await loadConfig({ cwd });
+
+  await assert.rejects(
+    () => syncJsonFixtureDb(config),
+    (error) => {
+      assert.equal(error.diagnostics?.[0]?.code, 'DUPLICATE_RESOURCE_NAME');
+      assert.match(error.diagnostics[0].message, /Duplicate resource name "chartMapping"/);
+      assert.match(error.diagnostics[0].message, /db\/chart\/mapping\.json/);
+      assert.match(error.diagnostics[0].message, /db\/chart-mapping\.json/);
+      return true;
+    },
+  );
+});
+
 test('resource naming strategies and customizeResource support duplicate filenames', async () => {
   const cwd = await makeProject();
   await writeConfig(cwd, `export default {
@@ -108,6 +167,29 @@ test('resource naming strategies and customizeResource support duplicate filenam
   assert.equal(result.schema.resources.landingPages.typeName, 'LandingPage');
   assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/cmsPages.json'), 'utf8')), [{ id: 'cms-home' }]);
   assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/landingPages.json'), 'utf8')), [{ id: 'marketing-home' }]);
+});
+
+test('resource-specific config keys resolve kebab-case aliases', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    collections: {
+      'chart-mappings': {
+        idField: 'mappingKey'
+      }
+    }
+  };`);
+  await writeFixture(cwd, 'chart-mappings.json', JSON.stringify([
+    {
+      mappingKey: 'cash',
+      account: '1000',
+    },
+  ]));
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+
+  assert.equal(result.schema.resources.chartMappings.idField, 'mappingKey');
+  assert.equal(result.schema.resources.chartMappings.fields.mappingKey.required, true);
 });
 
 test('CSV fixtures infer schema and refresh runtime state when the source hash changes', async () => {

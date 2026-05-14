@@ -32,6 +32,42 @@ test('REST handler resolves generated kebab-case collection routes', async () =>
       type: 'created',
     },
   ]);
+
+  const camelResponse = makeResponse();
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    camelResponse,
+    new URL('http://jsondb.local/auditEvents'),
+  );
+
+  assert.equal(camelResponse.status, 200);
+  assert.deepEqual(camelResponse.json(), response.json());
+});
+
+test('REST unknown resource errors include normalized name attempts', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'chart-mappings.json', JSON.stringify([
+    {
+      id: 'mapping_1',
+      chartId: 'chart_1',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const response = makeResponse();
+
+  await handleRestRequest(
+    db,
+    makeRequest('GET'),
+    response,
+    new URL('http://jsondb.local/chart-mappingz'),
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(response.json().error.code, 'REST_UNKNOWN_RESOURCE');
+  assert.deepEqual(response.json().error.details.normalizedCandidates, ['chart-mappingz', 'chartMappingz']);
+  assert.deepEqual(response.json().error.details.availableResources, ['chartMappings']);
 });
 
 test('REST handler serves the built-in jsondb viewer', async () => {

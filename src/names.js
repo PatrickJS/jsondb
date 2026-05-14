@@ -1,1 +1,13 @@
-export { camelCase, kebabCase, pascalCase, routePathForResource, singularResourceName, typeNameForResource } from './shared/names.js';
+export {
+  camelCase,
+  kebabCase,
+  pascalCase,
+  resolveResource,
+  resourceAliasCollisionGroups,
+  resourceAliasCollisions,
+  resourceConfigValue,
+  resourceNameCandidates,
+  routePathForResource,
+  singularResourceName,
+  typeNameForResource,
+} from './shared/names.js';

@@ -33,6 +33,15 @@ test('SQLite adapter supports collection and document CRUD when node:sqlite is a
     },
     "seed": []
   }`);
+  await writeFixture(cwd, 'chart-mappings.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": []
+  }`);
   await writeFixture(cwd, 'settings.schema.jsonc', `{
     "kind": "document",
     "fields": {
@@ -67,6 +76,14 @@ test('SQLite adapter supports collection and document CRUD when node:sqlite is a
     });
 
     assert.deepEqual(await db.collection('users').get('1'), created);
+    assert.deepEqual(await db.collection('chart-mappings').create({
+      id: 'mapping_1',
+      name: 'Default',
+    }), {
+      id: 'mapping_1',
+      name: 'Default',
+    });
+    assert.equal((await db.collection('chartMappings').get('mapping_1')).name, 'Default');
 
     await assert.rejects(
       () => db.collection('users').create({

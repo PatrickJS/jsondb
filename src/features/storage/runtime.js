@@ -1,4 +1,5 @@
 import { jsonDbError, listChoices } from '../../errors.js';
+import { resourceConfigValue } from '../../names.js';
 import { createJsonRuntimeAdapter } from './json.js';
 import { createMemoryRuntimeAdapter } from './memory.js';
 import { createSourceRuntimeAdapter } from './source.js';
@@ -28,7 +29,8 @@ export function createRuntime(config, resources) {
       return [...adapters.keys()];
     },
     strategyFor(resource) {
-      const configured = config.resources?.[resource.name]?.runtime ?? config.runtime?.default ?? 'json';
+      const resourceConfig = resourceConfigValue(config.resources, resource.name);
+      const configured = resourceConfig?.runtime ?? config.runtime?.default ?? 'json';
       return typeof configured === 'string' ? configured : configured?.adapter ?? configured?.name ?? 'json';
     },
     adapterFor(resource) {

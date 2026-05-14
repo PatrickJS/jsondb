@@ -88,11 +88,44 @@ function validateValue(resourceName: string, fieldPath: string, field: any, valu
 }
 
 function requireResource(resourceName: string) {
-  const resource = (resources as Record<string, any>)[resourceName];
+  const resource = resolveResource(resourceName);
   if (!resource) {
-    throw validationError(resourceName, 'Unknown resource "' + resourceName + '".');
+    throw validationError(resourceName, 'Unknown resource "' + resourceName + '". Tried: ' + resourceNameCandidates(resourceName).join(', ') + '.');
   }
   return resource;
+}
+
+function resolveResource(resourceName: string) {
+  for (const candidate of resourceNameCandidates(resourceName)) {
+    const resource = (resources as Record<string, any>)[candidate];
+    if (resource) {
+      return resource;
+    }
+  }
+  return null;
+}
+
+function resourceNameCandidates(value: string) {
+  const exact = String(value);
+  return [...new Set([exact, camelCase(exact), kebabCase(exact)])];
+}
+
+function camelCase(value: string) {
+  return words(value).map((word, index) => (
+    index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1)
+  )).join('');
+}
+
+function kebabCase(value: string) {
+  return words(value).join('-');
+}
+
+function words(value: string) {
+  return String(value)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
 }
 
 function validationError(resourceName: string, message: string) {

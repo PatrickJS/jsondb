@@ -65,6 +65,65 @@ test('package API duplicate ids produce actionable errors', async () => {
   );
 });
 
+test('package API resolves camelCase and kebab-case resource names', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'chart-mappings.json', JSON.stringify([
+    {
+      id: 'map_1',
+      name: 'Default',
+    },
+  ]));
+  await writeFixture(cwd, 'chart-preferences.json', JSON.stringify({
+    theme: 'finance',
+  }));
+
+  const db = await openJsonFixtureDb({ cwd });
+
+  assert.deepEqual(await db.collection('chartMappings').all(), [
+    {
+      id: 'map_1',
+      name: 'Default',
+    },
+  ]);
+  assert.deepEqual(await db.collection('chart-mappings').all(), [
+    {
+      id: 'map_1',
+      name: 'Default',
+    },
+  ]);
+  assert.deepEqual(await db.document('chartPreferences').all(), {
+    theme: 'finance',
+  });
+  assert.deepEqual(await db.document('chart-preferences').all(), {
+    theme: 'finance',
+  });
+});
+
+test('package API unknown resource errors include attempted normalized names', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'chart-mappings.json', JSON.stringify([
+    {
+      id: 'map_1',
+      name: 'Default',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+
+  assert.throws(
+    () => db.collection('chart-mappingz'),
+    (error) => {
+      assert.equal(error.code, 'DB_UNKNOWN_RESOURCE');
+      assert.equal(error.details.resource, 'chart-mappingz');
+      assert.equal(error.details.requestedResource, 'chart-mappingz');
+      assert.deepEqual(error.details.normalizedCandidates, ['chart-mappingz', 'chartMappingz']);
+      assert.deepEqual(error.details.availableResources, ['chartMappings']);
+      assert.match(error.hint, /chartMappings/);
+      return true;
+    },
+  );
+});
+
 test('package create assigns a counter id when the body omits id', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.jsonc', `{

@@ -1,3 +1,5 @@
+import { resolveResource } from '../../names.js';
+
 const RELATION_SCALAR_FIELD_TYPES = new Set(['string', 'datetime', 'number', 'boolean', 'enum']);
 
 export function validateProjectRelations(resources) {
@@ -12,7 +14,7 @@ export function validateProjectRelations(resources) {
         diagnostics.push(sourceFieldDiagnostic);
       }
 
-      const target = resourceMap.get(relation.targetResource);
+      const target = resolveResource(resourceMap, relation.targetResource).resource;
       if (!target || target.kind !== 'collection') {
         diagnostics.push({
           code: 'SCHEMA_RELATION_TARGET_RESOURCE_MISSING',

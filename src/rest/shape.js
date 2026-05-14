@@ -1,4 +1,5 @@
 import { jsonDbError, listChoices } from '../errors.js';
+import { resolveResource } from '../names.js';
 
 export async function shapeCollectionRead(db, resource, records, url, options = {}) {
   const query = parseShapeQuery(db, resource, url, options);
@@ -106,7 +107,7 @@ function validateSelectedFields(db, resource, select, expanded, relationMap) {
       throw selectRequiresExpand(resource, head);
     }
 
-    const target = db.resources.get(relation.targetResource);
+    const target = resolveResource(db.resources, relation.targetResource).resource;
     const targetFields = target?.fields ?? {};
     if (!(child in targetFields)) {
       throw unknownSelectField(target ?? resource, child, Object.keys(targetFields), `${head}.${child}`);

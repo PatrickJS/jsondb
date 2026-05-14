@@ -48,6 +48,46 @@ test('schema validation reports missing required relation targets', async () => 
   assert.match(relationDiagnostics[0].message, /missing_author/);
 });
 
+test('schema validation resolves relation targets through resource aliases', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'chart-mappings.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true }
+    },
+    "seed": [
+      { "id": "cash" }
+    ]
+  }`);
+  await writeFixture(cwd, 'pages.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "chartMappingId": {
+        "type": "string",
+        "required": true,
+        "relation": {
+          "name": "chartMapping",
+          "to": "chart-mappings",
+          "toField": "id",
+          "cardinality": "one"
+        }
+      }
+    },
+    "seed": [
+      { "id": "home", "chartMappingId": "cash" }
+    ]
+  }`);
+
+  const config = await loadConfig({ cwd });
+  const project = await loadProjectSchema(config);
+
+  assert.deepEqual(project.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'), []);
+  assert.equal(project.schema.resources.chartMappings.kind, 'collection');
+});
+
 test('schema validation reports relation metadata on non-scalar source fields', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'authors.schema.jsonc', `{

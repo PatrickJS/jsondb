@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { loadConfig } from '../config.js';
 import { jsonDbError, listChoices } from '../errors.js';
+import { resolveResource, resourceAliasCollisionGroups } from '../names.js';
 import { assertRecordMatchesResource, loadProjectSchema } from '../schema.js';
 import { applyDefaultsToRecord } from '../sync.js';
 
@@ -39,6 +40,7 @@ export class SqliteJsonDb {
   constructor(config, resources, database) {
     this.config = config;
     this.resources = new Map(resources.map((resource) => [resource.name, resource]));
+    assertNoResourceAliasCollisions(this.resources);
     this.database = database;
   }
 
@@ -61,7 +63,7 @@ export class SqliteJsonDb {
   }
 
   requireResource(name, kind) {
-    const resource = this.resources.get(name);
+    const { resource, candidates } = resolveResource(this.resources, name);
     if (!resource) {
       throw jsonDbError(
         'SQLITE_UNKNOWN_RESOURCE',
@@ -71,6 +73,8 @@ export class SqliteJsonDb {
           hint: `Use one of: ${listChoices(this.resourceNames())}.`,
           details: {
             resource: name,
+            requestedResource: name,
+            normalizedCandidates: candidates,
             availableResources: this.resourceNames(),
           },
         },
@@ -97,6 +101,30 @@ export class SqliteJsonDb {
 
     return resource;
   }
+}
+
+function assertNoResourceAliasCollisions(resources) {
+  const collisions = resourceAliasCollisionGroups(resources);
+  if (collisions.length === 0) {
+    return;
+  }
+
+  const collision = collisions[0];
+  throw jsonDbError(
+    'SQLITE_RESOURCE_ALIAS_COLLISION',
+    `Resource aliases are ambiguous for "${collision.alias}".`,
+    {
+      status: 400,
+      hint: 'Rename one resource so its camelCase and kebab-case aliases are unique.',
+      details: {
+        alias: collision.alias,
+        aliases: collision.aliases,
+        resources: collision.resources,
+        candidates: collision.candidates,
+        collisions,
+      },
+    },
+  );
 }
 
 export class SqliteJsonDbCollection {

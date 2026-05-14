@@ -15,12 +15,13 @@ export async function syncJsonFixtureDb(config, options = {}) {
   const project = await loadProjectSchema(config);
   const logs = [];
   const errors = project.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
+  const fatalErrors = errors.filter((diagnostic) => diagnostic.code === 'RESOURCE_ALIAS_COLLISION');
 
   for (const resource of project.resources) {
     logs.push(`Loaded ${path.relative(config.cwd, resource.schemaPath ?? resource.dataPath)}`);
   }
 
-  if (errors.length > 0 && options.allowErrors !== true) {
+  if (fatalErrors.length > 0 || (errors.length > 0 && options.allowErrors !== true)) {
     const error = new Error(errors.map((diagnostic) => diagnostic.message).join('\n'));
     error.diagnostics = project.diagnostics;
     throw error;

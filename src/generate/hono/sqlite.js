@@ -61,7 +61,7 @@ ${renderMigrationExecLines(project.resources)}
 
 function collectionRepository(db: DatabaseSync, resourceName: string): CollectionRepository {
   const resource = requireResource(resourceName, 'collection');
-  const table = quoteIdentifier(resourceName);
+  const table = quoteIdentifier(resource.name);
   const fields = Object.keys(resource.fields);
   const idField = resource.idField || 'id';
 
@@ -106,16 +106,16 @@ function collectionRepository(db: DatabaseSync, resourceName: string): Collectio
 }
 
 function documentRepository(db: DatabaseSync, resourceName: string): DocumentRepository {
-  requireResource(resourceName, 'document');
+  const resource = requireResource(resourceName, 'document');
   return {
     async all() {
-      const row = db.prepare('SELECT value FROM _jsondb_documents WHERE name = ?').get(resourceName) as { value: string } | undefined;
+      const row = db.prepare('SELECT value FROM _jsondb_documents WHERE name = ?').get(resource.name) as { value: string } | undefined;
       return row ? JSON.parse(row.value) : {};
     },
     async put(value) {
       const next = applyDefaults(resourceName, stripUnknownFields(resourceName, value));
       validateRecord(resourceName, next);
-      db.prepare('INSERT INTO _jsondb_documents (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value').run(resourceName, JSON.stringify(next));
+      db.prepare('INSERT INTO _jsondb_documents (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value').run(resource.name, JSON.stringify(next));
       return next;
     },
     async patch(value) {
@@ -174,11 +174,44 @@ function nextId(db: DatabaseSync, table: string, idField: string) {
 }
 
 function requireResource(resourceName: string, kind: 'collection' | 'document') {
-  const resource = (resources as Record<string, any>)[resourceName];
+  const resource = resolveResource(resourceName);
   if (!resource || resource.kind !== kind) {
-    throw new Error('Unknown ' + kind + ' resource "' + resourceName + '".');
+    throw new Error('Unknown ' + kind + ' resource "' + resourceName + '". Tried: ' + resourceNameCandidates(resourceName).join(', ') + '.');
   }
   return resource;
+}
+
+function resolveResource(resourceName: string) {
+  for (const candidate of resourceNameCandidates(resourceName)) {
+    const resource = (resources as Record<string, any>)[candidate];
+    if (resource) {
+      return resource;
+    }
+  }
+  return null;
+}
+
+function resourceNameCandidates(value: string) {
+  const exact = String(value);
+  return [...new Set([exact, camelCase(exact), kebabCase(exact)])];
+}
+
+function camelCase(value: string) {
+  return words(value).map((word, index) => (
+    index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1)
+  )).join('');
+}
+
+function kebabCase(value: string) {
+  return words(value).join('-');
+}
+
+function words(value: string) {
+  return String(value)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
 }
 
 function quoteIdentifier(value: string) {

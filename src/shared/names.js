@@ -26,6 +26,89 @@ export function kebabCase(value) {
   return words(value).join('-');
 }
 
+export function resourceNameCandidates(value) {
+  const exact = String(value);
+  return unique([
+    exact,
+    camelCase(exact),
+    kebabCase(exact),
+  ]);
+}
+
+export function resolveResource(resources, requestedName) {
+  const candidates = resourceNameCandidates(requestedName);
+
+  for (const candidate of candidates) {
+    if (resources.has(candidate)) {
+      return {
+        resource: resources.get(candidate),
+        matchedName: candidate,
+        candidates,
+      };
+    }
+  }
+
+  return {
+    resource: null,
+    matchedName: null,
+    candidates,
+  };
+}
+
+export function resourceAliasCollisions(resources) {
+  const aliasResources = new Map();
+  const resourceList = Array.isArray(resources) ? resources : [...resources.values()];
+
+  for (const resource of resourceList) {
+    const resourceName = typeof resource === 'string' ? resource : resource.name;
+    for (const alias of resourceNameCandidates(resourceName)) {
+      const names = aliasResources.get(alias) ?? new Set();
+      names.add(resourceName);
+      aliasResources.set(alias, names);
+    }
+  }
+
+  return [...aliasResources.entries()]
+    .map(([alias, names]) => ({
+      alias,
+      resources: [...names].sort(),
+    }))
+    .filter((collision) => collision.resources.length > 1)
+    .sort((left, right) => left.alias.localeCompare(right.alias));
+}
+
+export function resourceAliasCollisionGroups(resources) {
+  const groups = new Map();
+
+  for (const collision of resourceAliasCollisions(resources)) {
+    const key = collision.resources.join('\0');
+    const group = groups.get(key) ?? {
+      alias: collision.alias,
+      aliases: [],
+      resources: collision.resources,
+      candidates: Object.fromEntries(collision.resources.map((resource) => [resource, resourceNameCandidates(resource)])),
+    };
+    group.aliases.push(collision.alias);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()];
+}
+
+export function resourceConfigValue(values, resourceName) {
+  if (!values || typeof values !== 'object') {
+    return undefined;
+  }
+
+  for (const candidate of resourceNameCandidates(resourceName)) {
+    if (Object.prototype.hasOwnProperty.call(values, candidate)) {
+      return values[candidate];
+    }
+  }
+
+  return undefined;
+}
+
 export function singularResourceName(resourceName) {
   const normalized = resourceName.toLowerCase();
   if (IRREGULAR_SINGULARS.has(normalized)) {
@@ -62,4 +145,8 @@ function words(value) {
     .split(/[^A-Za-z0-9]+/)
     .filter(Boolean)
     .map((part) => part.toLowerCase());
+}
+
+function unique(values) {
+  return [...new Set(values)];
 }

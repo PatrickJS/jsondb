@@ -1,11 +1,12 @@
-import { routePathForResource, typeNameForResource } from '../../names.js';
+import { resourceConfigValue, routePathForResource, typeNameForResource } from '../../names.js';
 import { inferFieldsFromData, normalizeField } from './fields.js';
 import { relationsForResource } from './relations.js';
 
 export function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, schemaSource, rawData, rawSchema, config }) {
+  const collectionConfig = resourceConfigValue(config.collections, name) ?? {};
   if (rawSchema) {
     const kind = rawSchema.kind ?? inferKindFromData(rawData) ?? 'collection';
-    const idField = rawSchema.idField ?? config.collections?.[name]?.idField ?? 'id';
+    const idField = rawSchema.idField ?? collectionConfig.idField ?? 'id';
     const schemaSeed = rawSchema.seed ?? emptySeedForKind(kind);
     const seed = rawData !== undefined ? rawData : schemaSeed;
     let fields = Object.fromEntries(
@@ -35,7 +36,7 @@ export function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath
   }
 
   const kind = inferKindFromData(rawData);
-  const idField = config.collections?.[name]?.idField ?? inferIdField(rawData, kind);
+  const idField = collectionConfig.idField ?? inferIdField(rawData, kind);
   const normalizedSeed = normalizeSeed(rawData, kind);
   const idResult = ensureCollectionSeedIds(normalizedSeed, kind, idField);
   const fields = kind === 'collection'

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseCsvRecords } from '../csv.js';
 import { jsonDbError, listChoices, serializeError } from '../errors.js';
+import { resolveResource, resourceNameCandidates } from '../names.js';
 import { makeGeneratedSchema } from '../schema.js';
 import { syncJsonFixtureDb } from '../sync.js';
 import { renderJsonDbViewer } from '../web/viewer.js';
@@ -72,6 +73,10 @@ async function handleRestRequestUnsafe(db, request, response, url, options) {
         hint: `Use one of: ${listChoices([...db.resources.values()].map((resource) => resource.routePath))}.`,
         details: {
           routeName,
+          resource: routeName,
+          requestedResource: routeName,
+          normalizedCandidates: resourceNameCandidates(routeName),
+          availableResources: db.resourceNames(),
           availableRoutes: [...db.resources.values()].map((resource) => resource.routePath),
         },
       },
@@ -121,7 +126,7 @@ function splitFormatExtension(value) {
 }
 
 export function findResourceByRoute(db, routeName) {
-  return db.resources.get(routeName)
+  return resolveResource(db.resources, routeName).resource
     ?? [...db.resources.values()].find((candidate) => candidate.routePath.slice(1) === routeName);
 }
 

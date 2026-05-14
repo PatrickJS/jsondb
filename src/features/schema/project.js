@@ -1,6 +1,7 @@
 import { buildResource } from './resource.js';
 import { duplicateResourceDiagnostics, listSourceFiles, readSourceFile, trackResourceSource } from './sources.js';
 import { makeGeneratedSchema } from './generated.js';
+import { resourceAliasCollisionGroups } from '../../names.js';
 import { validateProjectRelations } from './relations.js';
 import { validateResourceSeed } from './validation.js';
 
@@ -56,10 +57,26 @@ export async function loadProjectSchema(config) {
   }
 
   diagnostics.push(...validateProjectRelations(resources));
+  diagnostics.push(...resourceAliasCollisionDiagnostics(resources));
 
   return {
     resources,
     diagnostics,
     schema: makeGeneratedSchema(resources, diagnostics),
   };
+}
+
+function resourceAliasCollisionDiagnostics(resources) {
+  return resourceAliasCollisionGroups(resources).map((collision) => ({
+    code: 'RESOURCE_ALIAS_COLLISION',
+    severity: 'error',
+    message: `Resource aliases are ambiguous for "${collision.alias}": ${collision.resources.map((resource) => `"${resource}"`).join(' and ')} both resolve through ${collision.aliases.map((alias) => `"${alias}"`).join(', ')}.`,
+    hint: 'Rename one fixture or customize resource names so every camelCase and kebab-case alias maps to one resource.',
+    details: {
+      alias: collision.alias,
+      aliases: collision.aliases,
+      resources: collision.resources,
+      candidates: collision.candidates,
+    },
+  }));
 }

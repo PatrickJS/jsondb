@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { jsonDbError, listChoices } from '../../errors.js';
+import { resolveResource } from '../../names.js';
 import { loadProjectSchema } from '../../schema.js';
 import { generateSchemaManifest } from '../../schema-manifest.js';
 import { valueAfter } from '../args.js';
@@ -40,12 +42,26 @@ export async function runSchema(config, args) {
   }
 
   if (args[0]) {
-    const resource = project.schema.resources[args[0]];
+    const resourceMap = new Map(project.resources.map((resource) => [resource.name, resource]));
+    const { resource, candidates } = resolveResource(resourceMap, args[0]);
     if (!resource) {
-      throw new Error(`Unknown schema resource "${args[0]}"`);
+      throw jsonDbError(
+        'SCHEMA_UNKNOWN_RESOURCE',
+        `Unknown schema resource "${args[0]}".`,
+        {
+          status: 404,
+          hint: `Use one of: ${listChoices(project.resources.map((resource) => resource.name))}.`,
+          details: {
+            resource: args[0],
+            requestedResource: args[0],
+            normalizedCandidates: candidates,
+            availableResources: project.resources.map((resource) => resource.name),
+          },
+        },
+      );
     }
 
-    console.log(JSON.stringify(resource, null, 2));
+    console.log(JSON.stringify(project.schema.resources[resource.name], null, 2));
     return;
   }
 
