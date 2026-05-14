@@ -50,6 +50,7 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 
 - 2026-05-11 - Added REST response shaping with `select`, `offset`, and `limit`; added explicit depth-1 to-one relation metadata and `expand` support. Commit [d9f7c70](https://github.com/PatrickJS/jsondb/commit/d9f7c7026d943a78ddf64688173e3c00089c6287).
 - 2026-05-14 - Added REST response formats, fixture-based resource naming strategies, custom resource naming hooks, and duplicate-resource diagnostics. Commit [0c95b52](https://github.com/PatrickJS/jsondb/commit/0c95b5237d3d4530f6f5cdf534df1358943cc1dc).
+- 2026-05-14 - Added canonical resource alias resolution and collision diagnostics across CLI commands, runtime APIs, REST, SQLite, generated starters, schema loading, and the viewer. Commit [b7089b1](https://github.com/PatrickJS/jsondb/commit/b7089b13d3cbca060d5b51fb04ccd8a89a87ad70).
 
 ### GraphQL
 
@@ -91,3 +92,4 @@ GitHub repository: <https://github.com/PatrickJS/jsondb>.
 - 2026-05-14 - Modularized the CLI, runtime, config, doctor, sync, integration, and generator code into feature and shared namespaces while preserving compatibility exports. Commit [d7de49b](https://github.com/PatrickJS/jsondb/commit/d7de49b66fa3f59e8dcaf4905edd73920cbc80a4).
 - 2026-05-14 - Added the npm-packaged changelog entry for commit `e1ab356`. Commit [663035f](https://github.com/PatrickJS/jsondb/commit/663035ffb4f6548a5b7637d28f2f06f2fdc86a9a).
 - 2026-05-14 - Merged upstream `main` after the May 14 feature, refactor, and changelog updates. Commit [58ac729](https://github.com/PatrickJS/jsondb/commit/58ac729c7edf56da65512f2bd2e7181f1d7ff7f3).
+- 2026-05-14 - Updated the changelog with the May 14 feature, refactor, packaging, and merge history. Commit [f38bdaa](https://github.com/PatrickJS/jsondb/commit/f38bdaa96248fd515d0518ea43a39c2f6d03a4c4).
