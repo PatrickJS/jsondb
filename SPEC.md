@@ -156,7 +156,7 @@ users.json controls the seed records
 ```
 
 If the schema file also contains `seed`, that embedded seed is ignored in favor of
-the data fixture. The CLI should warn and suggest splitting the seed out of the
+the data fixture. The CLI should warn and suggest unbundling the seed from the
 schema source so mixed mode keeps contracts and seed records in separate files.
 
 If the two disagree, the CLI reports the mismatch:
@@ -1217,8 +1217,8 @@ jsondb types --watch
 jsondb types --out ./src/generated/jsondb.types.ts
 jsondb schema
 jsondb schema validate
-jsondb schema split users
-jsondb schema merge users --out db/users.merged.schema.json
+jsondb schema unbundle users
+jsondb schema bundle users --out db/users.bundle.schema.json
 jsondb generate hono
 jsondb generate hono --api rest,graphql --out ./server
 jsondb generate hono --api none --app module

@@ -37,13 +37,13 @@ export async function runSchema(config, args) {
     return;
   }
 
-  if (args[0] === 'split') {
-    await runSchemaSplit(config, project, args);
+  if (args[0] === 'unbundle') {
+    await runSchemaUnbundle(config, project, args);
     return;
   }
 
-  if (args[0] === 'merge') {
-    await runSchemaMerge(config, project, args);
+  if (args[0] === 'bundle') {
+    await runSchemaBundle(config, project, args);
     return;
   }
 
@@ -89,14 +89,14 @@ export async function runSchema(config, args) {
   console.log(JSON.stringify(project.schema, null, 2));
 }
 
-async function runSchemaSplit(config, project, args) {
+async function runSchemaUnbundle(config, project, args) {
   const resourceName = positionalArgs(args.slice(1))[0];
   if (!resourceName) {
     throw jsonDbError(
-      'SCHEMA_SPLIT_REQUIRES_RESOURCE',
-      'SCHEMA_SPLIT_REQUIRES_RESOURCE: schema split requires a resource name.',
+      'SCHEMA_UNBUNDLE_REQUIRES_RESOURCE',
+      'SCHEMA_UNBUNDLE_REQUIRES_RESOURCE: schema unbundle requires a resource name.',
       {
-        hint: 'Use jsondb schema split users.',
+        hint: 'Use jsondb schema unbundle users.',
       },
     );
   }
@@ -105,8 +105,8 @@ async function runSchemaSplit(config, project, args) {
   const explicitSchemaOutFile = outputPath(config, valueAfter(args, '--schema-out'));
   if (!explicitSchemaOutFile && resource.schemaPath?.endsWith('.schema.mjs')) {
     throw jsonDbError(
-      'SCHEMA_SPLIT_SCHEMA_MJS_REQUIRES_OUT',
-      `SCHEMA_SPLIT_SCHEMA_MJS_REQUIRES_OUT: schema split cannot rewrite ${path.relative(config.cwd, resource.schemaPath)} in place.`,
+      'SCHEMA_UNBUNDLE_SCHEMA_MJS_REQUIRES_OUT',
+      `SCHEMA_UNBUNDLE_SCHEMA_MJS_REQUIRES_OUT: schema unbundle cannot rewrite ${path.relative(config.cwd, resource.schemaPath)} in place.`,
       {
         hint: 'Use --schema-out to write a JSON/JSONC schema source, then replace the .schema.mjs file when you are ready.',
       },
@@ -132,14 +132,14 @@ async function runSchemaSplit(config, project, args) {
   }
 }
 
-async function runSchemaMerge(config, project, args) {
+async function runSchemaBundle(config, project, args) {
   const resourceName = positionalArgs(args.slice(1))[0];
   if (!resourceName) {
     throw jsonDbError(
-      'SCHEMA_MERGE_REQUIRES_RESOURCE',
-      'SCHEMA_MERGE_REQUIRES_RESOURCE: schema merge requires a resource name.',
+      'SCHEMA_BUNDLE_REQUIRES_RESOURCE',
+      'SCHEMA_BUNDLE_REQUIRES_RESOURCE: schema bundle requires a resource name.',
       {
-        hint: 'Use jsondb schema merge users --out db/users.schema.json.',
+        hint: 'Use jsondb schema bundle users --out db/users.bundle.schema.json.',
       },
     );
   }
