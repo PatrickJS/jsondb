@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
@@ -121,9 +121,10 @@ test('CLI schema validate warns when mixed mode schema embeds ignored seed', asy
   assert.match(stderr, /db\/users\.schema\.jsonc includes seed records, but db\/users\.json provides seed data/);
 });
 
-test('CLI schema unbundle migrates embedded schema seed into a separate data fixture', async () => {
+test('CLI schema unbundle migrates embedded schema seed into a separate data fixture and warns before rewriting JSONC', async () => {
   const cwd = await makeProject();
   await writeFixture(cwd, 'users.schema.jsonc', `{
+    // Local demo users.
     "kind": "collection",
     "idField": "id",
     "fields": {
@@ -133,7 +134,7 @@ test('CLI schema unbundle migrates embedded schema seed into a separate data fix
     "seed": [{ "id": "u_1", "name": "Ada" }]
   }`);
 
-  const { stdout } = await execFileAsync(process.execPath, [
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
     path.resolve('src/cli.js'),
     'schema',
     'unbundle',
@@ -146,8 +147,134 @@ test('CLI schema unbundle migrates embedded schema seed into a separate data fix
 
   assert.match(stdout, /Generated db\/users\.json/);
   assert.match(stdout, /Generated db\/users\.schema\.jsonc/);
+  assert.match(stderr, /rewrites db\/users\.schema\.jsonc without preserving JSONC comments/);
   assert.equal(schema.seed, undefined);
   assert.deepEqual(seed, [{ id: 'u_1', name: 'Ada' }]);
+});
+
+test('CLI schema unbundle refuses to overwrite a different seed output without force', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [{ "id": "u_1", "name": "Ada" }]
+  }`);
+  await mkdir(path.join(cwd, 'artifacts'), { recursive: true });
+  await writeFile(path.join(cwd, 'artifacts/users.json'), '[{ "id": "u_2", "name": "Grace" }]\n', 'utf8');
+
+  await assert.rejects(
+    () => execFileAsync(process.execPath, [
+      path.resolve('src/cli.js'),
+      'schema',
+      'unbundle',
+      'users',
+      '--cwd',
+      cwd,
+      '--seed-out',
+      './artifacts/users.json',
+    ]),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /SCHEMA_OUTPUT_EXISTS/);
+      return true;
+    },
+  );
+});
+
+test('CLI schema unbundle accepts semantically matching seed output', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [{ "id": "u_1", "name": "Ada" }]
+  }`);
+  await mkdir(path.join(cwd, 'artifacts'), { recursive: true });
+  await writeFile(path.join(cwd, 'artifacts/users.json'), '[{"name":"Ada","id":"u_1"}]\n', 'utf8');
+
+  await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'unbundle',
+    'users',
+    '--cwd',
+    cwd,
+    '--seed-out',
+    './artifacts/users.json',
+  ]);
+});
+
+test('CLI schema unbundle force overwrites a different seed output', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    },
+    "seed": [{ "id": "u_1", "name": "Ada" }]
+  }`);
+  await mkdir(path.join(cwd, 'artifacts'), { recursive: true });
+  await writeFile(path.join(cwd, 'artifacts/users.json'), '[{ "id": "u_2", "name": "Grace" }]\n', 'utf8');
+
+  await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'unbundle',
+    'users',
+    '--cwd',
+    cwd,
+    '--seed-out',
+    './artifacts/users.json',
+    '--force',
+  ]);
+  const seed = JSON.parse(await readFile(path.join(cwd, 'artifacts/users.json'), 'utf8'));
+
+  assert.deepEqual(seed, [{ id: 'u_1', name: 'Ada' }]);
+});
+
+test('CLI schema unbundle skips empty schema-only seed unless requested', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true }
+    },
+    "seed": []
+  }`);
+
+  await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'unbundle',
+    'users',
+    '--cwd',
+    cwd,
+  ]);
+
+  await assert.rejects(() => readFile(path.join(cwd, 'db/users.json'), 'utf8'), /ENOENT/);
+
+  await execFileAsync(process.execPath, [
+    path.resolve('src/cli.js'),
+    'schema',
+    'unbundle',
+    'users',
+    '--cwd',
+    cwd,
+    '--empty-seed',
+  ]);
+  const seed = JSON.parse(await readFile(path.join(cwd, 'db/users.json'), 'utf8'));
+
+  assert.deepEqual(seed, []);
 });
 
 test('CLI schema unbundle requires --schema-out for executable schema sources', async () => {
@@ -201,13 +328,44 @@ test('CLI schema bundle writes a schema source with seed from a separate data fi
     '--cwd',
     cwd,
     '--out',
-    './db/users.bundle.schema.json',
+    './artifacts/users.bundle.schema.json',
   ]);
-  const bundled = JSON.parse(await readFile(path.join(cwd, 'db/users.bundle.schema.json'), 'utf8'));
+  const bundled = JSON.parse(await readFile(path.join(cwd, 'artifacts/users.bundle.schema.json'), 'utf8'));
 
-  assert.match(stdout, /Generated db\/users\.bundle\.schema\.json/);
+  assert.match(stdout, /Generated artifacts\/users\.bundle\.schema\.json/);
   assert.deepEqual(bundled.seed, [{ id: 'u_1', name: 'Ada' }]);
   assert.equal(bundled.fields.name.type, 'string');
+});
+
+test('CLI schema bundle refuses active db output without force', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([{ id: 'u_1', name: 'Ada' }]));
+  await writeFixture(cwd, 'users.schema.jsonc', `{
+    "kind": "collection",
+    "idField": "id",
+    "fields": {
+      "id": { "type": "string", "required": true },
+      "name": { "type": "string", "required": true }
+    }
+  }`);
+
+  await assert.rejects(
+    () => execFileAsync(process.execPath, [
+      path.resolve('src/cli.js'),
+      'schema',
+      'bundle',
+      'users',
+      '--cwd',
+      cwd,
+      '--out',
+      './db/users.bundle.schema.json',
+    ]),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /SCHEMA_BUNDLE_LIVE_OUTPUT_REQUIRES_FORCE/);
+      return true;
+    },
+  );
 });
 
 test('CLI schema infer --out requires a single resource', async () => {

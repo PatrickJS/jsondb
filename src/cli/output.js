@@ -26,8 +26,8 @@ Usage:
   jsondb types [--watch] [--out <file>]
   jsondb schema [resource]
   jsondb schema infer [resource] [--out <file>]
-  jsondb schema unbundle <resource> [--schema-out <file>] [--seed-out <file>]
-  jsondb schema bundle <resource> [--out <file>]
+  jsondb schema unbundle <resource> [--schema-out <file>] [--seed-out <file>] [--empty-seed] [--force]
+  jsondb schema bundle <resource> [--out <file>] [--force]
   jsondb schema manifest [--out <file>]
   jsondb schema validate
   jsondb doctor [--strict] [--json]
@@ -62,8 +62,8 @@ export function printSchemaHelp() {
 Usage:
   jsondb schema [resource]
   jsondb schema infer [resource] [--out <file>]
-  jsondb schema unbundle <resource> [--schema-out <file>] [--seed-out <file>]
-  jsondb schema bundle <resource> [--out <file>]
+  jsondb schema unbundle <resource> [--schema-out <file>] [--seed-out <file>] [--empty-seed] [--force]
+  jsondb schema bundle <resource> [--out <file>] [--force]
   jsondb schema manifest [--out <file>]
   jsondb schema validate
 
@@ -71,6 +71,8 @@ Options:
   --out <file>        Write schema manifest, inferred schema, or bundled schema output to this path
   --schema-out <file> Write unbundled schema output to this path
   --seed-out <file>   Write unbundled seed output to this path
+  --empty-seed        Write an empty seed fixture when unbundling schema-only resources
+  --force             Allow overwriting outputs or writing bundle output inside db/
   --cwd <dir>     Project directory
   --config <file> Config file path
 `);
