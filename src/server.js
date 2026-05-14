@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { openJsonFixtureDb } from './db.js';
 import { serializeError } from './errors.js';
-import { loadForkDb } from './features/forks.js';
+import { loadForkDb } from './features/config/forks.js';
 import { handleGraphqlRequest } from './graphql/http.js';
 import { runMockBehavior } from './mock.js';
 import { handleRestRequest, sendJson } from './rest/handler.js';
