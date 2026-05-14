@@ -24,6 +24,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 - 2026-05-14 - Added pluggable runtimes, runtime write events, an HTTP feature registry, and a `/__jsondb/log` server-sent event stream. Commit [69337fa](https://github.com/PatrickJS/jsondb/commit/69337fa347fa20f6186f5afd70d95fb766c561ea).
 - 2026-05-14 - Added the `source` runtime for reading and writing source-backed JSON fixtures, with source metadata hydration and dot-folder ignoring. Commit [80ecfff](https://github.com/PatrickJS/jsondb/commit/80ecfffcd8c969902f9552e0b421ff8adc9c7e96).
 - 2026-05-14 - Avoided redundant disk writes by skipping unchanged output, preserving generated metadata, and centralizing source metadata updates. Commits [9ec39b1](https://github.com/PatrickJS/jsondb/commit/9ec39b11e0a93de72e6b62d3187a379aaccc4ede) and [c14e799](https://github.com/PatrickJS/jsondb/commit/c14e79933091f54a4ce98d9a7eb9e6c10ffd8085).
+- 2026-05-14 - Added `JsonDbCollection.exists()` to the package API and SQLite adapter. Commit [9586d5f](https://github.com/PatrickJS/jsondb/commit/9586d5f2e1fc6211fe9cb2b2ba9b8f5e7bcfaabe).
 
 ### Client, Viewer, Examples, and Mocking
 
@@ -43,6 +44,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 - 2026-05-11 - Added field constraints and unique-field validation across sync, package API writes, REST writes, GraphQL mutations, and schema validation. Commit [d38aa6b](https://github.com/PatrickJS/jsondb/commit/d38aa6b3cc92018feb1818a34803c5bc8805cb21).
 - 2026-05-14 - Added recursive nested fixture discovery, basename-derived resource names, recursive source watching, and nested schema-manifest context. Commit [27b3125](https://github.com/PatrickJS/jsondb/commit/27b3125047906b90a156594e5be29e88ff37f1ba).
 - 2026-05-14 - Added the custom source readers pipeline for user-defined formats, built-in reader normalization, source hashes, and structured reader diagnostics. Commit [53604b9](https://github.com/PatrickJS/jsondb/commit/53604b93e162b4063655cdd49834ed6295cb5991).
+- 2026-05-14 - Added `jsondb schema infer`, doctor guidance for adding or removing schemas, and discriminated object variants in inference, validation, manifests, and generated TypeScript types. Commits [9586d5f](https://github.com/PatrickJS/jsondb/commit/9586d5f2e1fc6211fe9cb2b2ba9b8f5e7bcfaabe) and [0d9bf62](https://github.com/PatrickJS/jsondb/commit/0d9bf62efc1259ea51fe043725d9a0b134b5ad38).
 
 ### Configuration
 
@@ -63,7 +65,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 
 - 2026-05-11 - Added `jsondb doctor` / `jsondb check`, JSON output, strict mode, fixture diagnostics, relation suggestions, and fork health checks. Commit [22cb816](https://github.com/PatrickJS/jsondb/commit/22cb8168daaa8779893e175ea23906e12a8f41fc).
 - 2026-05-11 - Documented the `doctor` CLI health check behavior in the product spec. Commit [bf29064](https://github.com/PatrickJS/jsondb/commit/bf2906458c944b18fa4a57f6de02ef9aacb3f153).
-- 2026-05-11 - Merged the shape-layer MVP branch containing the Vite plugin, REST shaping, relation support, and doctor work. Commit [bea5776](https://github.com/PatrickJS/jsondb/commit/bea5776816b6e20f65750e331e3b6330b59c7e51).
+- 2026-05-11 - Added the shape-layer MVP with the Vite plugin, REST shaping, relation support, and doctor work. Commit [bea5776](https://github.com/PatrickJS/jsondb/commit/bea5776816b6e20f65750e331e3b6330b59c7e51).
 
 ### Vite Integration
 
@@ -84,6 +86,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 
 - 2026-05-07 - Added the Hono and SQLite starter generator, optional Hono integration, optional SQLite adapter, generation CLI, and related tests. Commit [4e4770e](https://github.com/PatrickJS/jsondb/commit/4e4770e71eb376a524562c2a739c2a41bc40b9ac).
 - 2026-05-14 - Reused the opened Hono database promise in `jsonDbContext` so middleware calls share one opened database instance. Commit [434c7b6](https://github.com/PatrickJS/jsondb/commit/434c7b6be48320ff6d495f116a21a210d22b8f8b).
+- 2026-05-14 - Added `registerRestRoutes` for Hono with route prefixes, resource include/exclude controls, method filters, global hooks, per-resource hooks, and short-circuiting. Commits [9586d5f](https://github.com/PatrickJS/jsondb/commit/9586d5f2e1fc6211fe9cb2b2ba9b8f5e7bcfaabe) and [0d9bf62](https://github.com/PatrickJS/jsondb/commit/0d9bf62efc1259ea51fe043725d9a0b134b5ad38).
 
 ### Maintenance
 
@@ -93,7 +96,7 @@ are omitted. Commit links point at the canonical GitHub repository:
 - 2026-05-14 - Split the monolithic test suite into focused test files for CLI, config, doctor, package, runtime, schema, sync, and examples coverage. Commit [e8e4e8e](https://github.com/PatrickJS/jsondb/commit/e8e4e8e208b90707e664a9717a474b7cc8bec4fd).
 - 2026-05-14 - Extracted schema logic into feature modules for fields, generated metadata, project loading, relations, resources, sources, and validation. Commit [4503af8](https://github.com/PatrickJS/jsondb/commit/4503af8a19b6f6e1296347a90183c4eb93eef8c6).
 - 2026-05-14 - Modularized the CLI, runtime, config, doctor, sync, integration, and generator code into feature and shared namespaces while preserving compatibility exports. Commit [d7de49b](https://github.com/PatrickJS/jsondb/commit/d7de49b66fa3f59e8dcaf4905edd73920cbc80a4).
-- 2026-05-14 - Merged upstream `main` after the May 14 feature, refactor, and changelog updates. Commit [58ac729](https://github.com/PatrickJS/jsondb/commit/58ac729c7edf56da65512f2bd2e7181f1d7ff7f3).
+- 2026-05-14 - Added the May 14 source-reader, runtime, REST formatting, resource naming, schema-manifest, and modularization work together. Commit [58ac729](https://github.com/PatrickJS/jsondb/commit/58ac729c7edf56da65512f2bd2e7181f1d7ff7f3).
 - 2026-05-14 - Added architecture documentation, README and agent-guide cross-references, package globs for example metadata/source files, and command-specific CLI help handling. Commit [0b4d31e](https://github.com/PatrickJS/jsondb/commit/0b4d31e9329121a4e6c419451774e908360a021f).
 - 2026-05-14 - Printed subcommand help before loading project config, with focused help for `types`, `schema`, `doctor`, `serve`, and `generate`. Commit [0ba1c13](https://github.com/PatrickJS/jsondb/commit/0ba1c13e9e3a4b4d35e5618fc94a7db3acfdfb9c).
-- 2026-05-14 - Merged upstream `main` after the redundant-write and metadata preservation work. Commit [d15b30c](https://github.com/PatrickJS/jsondb/commit/d15b30c938ee216e9765ca6ef8fecafa664d6e32).
+- 2026-05-14 - Added redundant-write avoidance and generated metadata preservation together. Commit [d15b30c](https://github.com/PatrickJS/jsondb/commit/d15b30c938ee216e9765ca6ef8fecafa664d6e32).
