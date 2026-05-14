@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
 import { openJsonFixtureDb } from '../../src/index.js';
-import { makeProject, writeFixture } from '../helpers.js';
+import { makeProject, writeConfig, writeFixture } from '../helpers.js';
 
 test('defaults apply when creating records through the package API', async () => {
   const cwd = await makeProject();
@@ -238,4 +240,79 @@ test('singleton documents support JSON pointer get and set', async () => {
 
   assert.equal(await settings.get('/features/billing'), true);
   assert.equal((await settings.all()).features.billing, true);
+});
+
+test('memory runtime supports CRUD without writing JSON state files', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    { id: 'u_1', name: 'Ada Lovelace' },
+  ]));
+  await writeConfig(cwd, `export default {
+    runtime: {
+      default: 'memory'
+    }
+  };`);
+
+  const db = await openJsonFixtureDb({ cwd });
+  await db.collection('users').create({ id: 'u_2', name: 'Grace Hopper' });
+
+  assert.deepEqual(await db.collection('users').all(), [
+    { id: 'u_1', name: 'Ada Lovelace' },
+    { id: 'u_2', name: 'Grace Hopper' },
+  ]);
+  await assert.rejects(
+    () => access(path.join(cwd, '.jsondb/state/users.json')),
+    { code: 'ENOENT' },
+  );
+});
+
+test('static runtime resources are readable and reject writes', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'settings.json', JSON.stringify({
+    theme: 'light',
+  }));
+  await writeConfig(cwd, `export default {
+    resources: {
+      settings: {
+        runtime: 'static'
+      }
+    }
+  };`);
+
+  const db = await openJsonFixtureDb({ cwd });
+
+  assert.deepEqual(await db.document('settings').all(), { theme: 'light' });
+  await assert.rejects(
+    () => db.document('settings').update({ theme: 'dark' }),
+    (error) => {
+      assert.equal(error.code, 'RUNTIME_RESOURCE_READ_ONLY');
+      assert.match(error.message, /settings/);
+      return true;
+    },
+  );
+});
+
+test('runtime emits live events only after successful writes', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    { id: 'u_1', name: 'Ada Lovelace' },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd });
+  const events = [];
+  const unsubscribe = db.events.subscribe((event) => {
+    events.push(event);
+  });
+
+  await db.collection('users').create({ id: 'u_2', name: 'Grace Hopper' });
+  await assert.rejects(() => db.collection('users').create({ id: 'u_2', name: 'Duplicate' }));
+  unsubscribe();
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].resource, 'users');
+  assert.equal(events[0].kind, 'collection');
+  assert.equal(events[0].op, 'create');
+  assert.equal(events[0].id, 'u_2');
+  assert.equal(events[0].version, 1);
+  assert.match(events[0].timestamp, /^\d{4}-\d{2}-\d{2}T/);
 });

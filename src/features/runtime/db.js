@@ -3,17 +3,24 @@ import { loadConfig } from '../../config.js';
 import { jsonDbError, listChoices } from '../../errors.js';
 import { loadProjectSchema } from '../../schema.js';
 import { syncJsonFixtureDb } from '../../sync.js';
+import { createRuntime } from '../storage/runtime.js';
 import { JsonDbCollection } from './collection.js';
 import { JsonDbDocument } from './document.js';
 
 export async function openJsonFixtureDb(options = {}) {
   const config = await loadConfig(options);
   const syncOnOpen = options.syncOnOpen ?? true;
-  const project = syncOnOpen
+  const shouldUseJsonSync = syncOnOpen && allResourcesUseDefaultJsonRuntime(config);
+  const project = shouldUseJsonSync
     ? await syncJsonFixtureDb(config, { allowErrors: options.allowSourceErrors === true })
     : await loadProjectSchema(config);
+  const db = new JsonFixtureDb(config, project.resources, project.diagnostics);
 
-  return new JsonFixtureDb(config, project.resources, project.diagnostics);
+  if (syncOnOpen && !shouldUseJsonSync) {
+    await db.runtime.hydrate();
+  }
+
+  return db;
 }
 
 export class JsonFixtureDb {
@@ -22,16 +29,18 @@ export class JsonFixtureDb {
     this.resources = new Map(resources.map((resource) => [resource.name, resource]));
     this.diagnostics = diagnostics;
     this.schemaVersion = Date.now();
+    this.runtime = createRuntime(config, resources);
+    this.events = this.runtime.events;
   }
 
   collection(name) {
     const resource = this.requireResource(name, 'collection');
-    return new JsonDbCollection(this.config, resource);
+    return new JsonDbCollection(this, resource);
   }
 
   document(name) {
     const resource = this.requireResource(name, 'document');
-    return new JsonDbDocument(this.config, resource);
+    return new JsonDbDocument(this, resource);
   }
 
   requireResource(name, kind) {
@@ -79,4 +88,22 @@ export class JsonFixtureDb {
 
 export function stateFileForDebug(db, resourceName) {
   return path.join(db.config.stateDir, 'state', `${resourceName}.json`);
+}
+
+function allResourcesUseDefaultJsonRuntime(config) {
+  const defaultRuntime = config.runtime?.default ?? 'json';
+  if (defaultRuntime !== 'json') {
+    return false;
+  }
+
+  for (const [name, resourceConfig] of Object.entries(config.resources ?? {})) {
+    if (name === 'naming' || name === 'customizeResource' || name === 'customizeField') {
+      continue;
+    }
+    if (resourceConfig && typeof resourceConfig === 'object' && resourceConfig.runtime && resourceConfig.runtime !== 'json') {
+      return false;
+    }
+  }
+
+  return true;
 }

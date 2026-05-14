@@ -66,6 +66,58 @@ export type JsonDbResourceOptions = {
   naming?: JsonDbResourceNamingStrategy;
   /** Customize fixture path -> resource identity. */
   customizeResource?: (context: JsonDbResourceCustomizeContext) => { name?: string } | null | undefined;
+  /** Per-resource runtime settings keyed by normalized resource name. */
+  [resourceName: string]: JsonDbResourceNamingStrategy
+    | ((context: JsonDbResourceCustomizeContext) => { name?: string } | null | undefined)
+    | JsonDbPerResourceOptions
+    | undefined;
+};
+
+export type JsonDbRuntimeStrategy = 'json' | 'memory' | 'static' | string;
+
+export type JsonDbRuntimeCapabilities = {
+  writable?: boolean;
+  persistence?: 'local-file' | 'memory' | 'static' | 'remote' | string;
+  atomicity?: 'resource' | 'process' | 'none' | 'request' | string;
+  liveEvents?: boolean;
+  staticExport?: boolean;
+  production?: boolean | 'small-local' | 'small-app' | string;
+};
+
+export type JsonDbRuntimeAdapter = {
+  name: string;
+  capabilities?: JsonDbRuntimeCapabilities;
+};
+
+export type JsonDbRuntimeAdapterFactory =
+  | JsonDbRuntimeAdapter
+  | ((context: { config: JsonDbOptions; resources: unknown[] }) => JsonDbRuntimeAdapter);
+
+export type JsonDbPerResourceOptions = {
+  /** Runtime adapter name for this resource. Defaults to runtime.default. */
+  runtime?: JsonDbRuntimeStrategy | { adapter?: string; name?: string };
+};
+
+export type JsonDbRuntimeOptions = {
+  /** Default runtime adapter for resources without an explicit runtime. Defaults to "json". */
+  default?: JsonDbRuntimeStrategy;
+  /** Internal/future runtime adapter plugins. */
+  adapters?: JsonDbRuntimeAdapterFactory[];
+};
+
+export type JsonDbRuntimeEvent = {
+  version: number;
+  timestamp: string;
+  resource: string;
+  kind: 'collection' | 'document';
+  op: string;
+  id?: string | number;
+  pointer?: string;
+};
+
+export type JsonDbRuntimeEvents = {
+  readonly version: number;
+  subscribe(subscriber: (event: JsonDbRuntimeEvent) => void): () => void;
 };
 
 export type JsonDbSourceReaderContext = {
@@ -195,6 +247,8 @@ export type JsonDbOptions = {
   collections?: Record<string, { idField?: string }>;
   /** Resource naming and fixture path identity options. */
   resources?: JsonDbResourceOptions;
+  /** Runtime storage strategy options. Defaults to the JSON mirror runtime. */
+  runtime?: JsonDbRuntimeOptions;
   server?: {
     /** Local HTTP host. Defaults to "127.0.0.1". */
     host?: string;
@@ -276,6 +330,7 @@ export type JsonDbDocument<DocumentType> = {
 };
 
 export type JsonFixtureDb<Types extends JsonDbTypeMap = JsonDbTypeMap> = {
+  events: JsonDbRuntimeEvents;
   collection<Name extends keyof Types['collections'] & string>(name: Name): JsonDbCollection<Types['collections'][Name]>;
   document<Name extends keyof Types['documents'] & string>(name: Name): JsonDbDocument<Types['documents'][Name]>;
   resourceNames(): string[];

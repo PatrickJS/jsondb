@@ -223,6 +223,29 @@ test('request handler returns a structured 404 for unknown forks', async () => {
   assert.equal(response.json().error.code, 'FORK_NOT_FOUND');
 });
 
+test('request handler streams live runtime log events', async () => {
+  const cwd = await makeProject();
+  await writeFixture(cwd, 'users.json', JSON.stringify([
+    {
+      id: 'u_1',
+      name: 'Ada',
+    },
+  ]));
+
+  const db = await openJsonFixtureDb({ cwd, allowSourceErrors: true });
+  const handler = createJsonDbRequestHandler(db);
+  const response = makeResponse();
+
+  assert.equal(await handler(makeRequest('GET', '/__jsondb/log'), response), true);
+  await db.collection('users').create({ id: 'u_2', name: 'Grace' });
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers['content-type'], /text\/event-stream/);
+  assert.match(response.body, /event: jsondb-log/);
+  assert.match(response.body, /"resource":"users"/);
+  assert.match(response.body, /"op":"create"/);
+});
+
 function makeRequest(method, path, body) {
   return {
     method,

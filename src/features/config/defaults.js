@@ -36,6 +36,10 @@ export const DEFAULT_CONFIG = {
   resources: {
     naming: 'basename',
   },
+  runtime: {
+    default: 'json',
+    adapters: [],
+  },
   server: {
     host: '127.0.0.1',
     port: 7331,
