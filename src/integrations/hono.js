@@ -27,11 +27,14 @@ export async function createJsonDbHonoApp(options = {}) {
 }
 
 export function jsonDbContext(dbOrOptions) {
+  const db = typeof dbOrOptions?.collection === 'function'
+    ? dbOrOptions
+    : null;
+  let dbPromise = db ? Promise.resolve(db) : null;
+
   return async (c, next) => {
-    const db = typeof dbOrOptions?.collection === 'function'
-      ? dbOrOptions
-      : await openHonoDb(dbOrOptions ?? {});
-    c.set('jsondb', db);
+    dbPromise ??= openHonoDb(dbOrOptions ?? {});
+    c.set('jsondb', await dbPromise);
     await next();
   };
 }
