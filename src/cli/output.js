@@ -26,8 +26,8 @@ Usage:
   jsondb types [--watch] [--out <file>]
   jsondb schema [resource]
   jsondb schema infer [resource] [--out <file>]
-  jsondb schema split <resource> [--schema-out <file>] [--seed-out <file>]
-  jsondb schema merge <resource> [--out <file>]
+  jsondb schema unbundle <resource> [--schema-out <file>] [--seed-out <file>]
+  jsondb schema bundle <resource> [--out <file>]
   jsondb schema manifest [--out <file>]
   jsondb schema validate
   jsondb doctor [--strict] [--json]
@@ -62,15 +62,15 @@ export function printSchemaHelp() {
 Usage:
   jsondb schema [resource]
   jsondb schema infer [resource] [--out <file>]
-  jsondb schema split <resource> [--schema-out <file>] [--seed-out <file>]
-  jsondb schema merge <resource> [--out <file>]
+  jsondb schema unbundle <resource> [--schema-out <file>] [--seed-out <file>]
+  jsondb schema bundle <resource> [--out <file>]
   jsondb schema manifest [--out <file>]
   jsondb schema validate
 
 Options:
-  --out <file>        Write schema manifest, inferred schema, or merged schema output to this path
-  --schema-out <file> Write split schema output to this path
-  --seed-out <file>   Write split seed output to this path
+  --out <file>        Write schema manifest, inferred schema, or bundled schema output to this path
+  --schema-out <file> Write unbundled schema output to this path
+  --seed-out <file>   Write unbundled seed output to this path
   --cwd <dir>     Project directory
   --config <file> Config file path
 `);
