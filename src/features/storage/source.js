@@ -2,6 +2,7 @@ import { jsonDbError } from '../../errors.js';
 import { applyDefaultsToSeed } from '../sync/defaults.js';
 import { seedForRuntimeState } from '../sync/synthetic-seed.js';
 import { atomicWriteJson, readJsonState, withJsonStateWrite } from './json.js';
+import { updateSourceMetadataResource } from './source-metadata.js';
 
 export const sourceRuntimeCapabilities = {
   writable: true,
@@ -66,18 +67,5 @@ function assertWritableSource(resource) {
 }
 
 function updateSourceMetadata(sourceMetadata, config, resource) {
-  if (!resource.dataHash) {
-    return;
-  }
-
-  sourceMetadata.resources[resource.name] = {
-    path: resource.dataPath ? relativePath(config, resource.dataPath) : null,
-    format: resource.dataFormat,
-    hash: resource.dataHash,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function relativePath(config, filePath) {
-  return filePath.startsWith(config.cwd) ? filePath.slice(config.cwd.length + 1).split('\\').join('/') : filePath;
+  updateSourceMetadataResource(sourceMetadata, config, resource);
 }

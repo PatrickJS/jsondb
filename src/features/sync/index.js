@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { loadProjectSchema, makeGeneratedSchema } from '../../schema.js';
 import { generateSchemaManifest } from '../../schema-manifest.js';
@@ -28,11 +29,11 @@ export async function syncJsonFixtureDb(config, options = {}) {
   }
 
   await writeGeneratedIdsToSources(config, project.resources, logs);
-  project.schema = makeGeneratedSchema(project.resources, project.diagnostics);
 
   await ensureRuntimeDirs(config);
-
   const schemaOutFile = path.join(config.stateDir, 'schema.generated.json');
+  project.schema = await preserveGeneratedAt(schemaOutFile, makeGeneratedSchema(project.resources, project.diagnostics));
+
   await writeText(schemaOutFile, `${JSON.stringify(project.schema, null, 2)}\n`);
   logs.push(`Generated ${path.relative(config.cwd, schemaOutFile)}`);
 
@@ -65,4 +66,30 @@ export async function syncJsonFixtureDb(config, options = {}) {
     ...project,
     logs,
   };
+}
+
+async function preserveGeneratedAt(schemaOutFile, schema) {
+  let previous;
+  try {
+    previous = JSON.parse(await readFile(schemaOutFile, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) {
+      return schema;
+    }
+    throw error;
+  }
+
+  if (isObject(previous) && typeof previous.generatedAt === 'string' && sameGeneratedSchema(previous, schema)) {
+    schema.generatedAt = previous.generatedAt;
+  }
+
+  return schema;
+}
+
+function sameGeneratedSchema(left, right) {
+  return JSON.stringify({ ...left, generatedAt: null }) === JSON.stringify({ ...right, generatedAt: null });
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
