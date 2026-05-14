@@ -68,6 +68,60 @@ export type JsonDbResourceOptions = {
   customizeResource?: (context: JsonDbResourceCustomizeContext) => { name?: string } | null | undefined;
 };
 
+export type JsonDbSourceReaderContext = {
+  /** Repo-relative source path, such as "db/users.json". */
+  file: string;
+  /** Absolute source file path. */
+  sourceFile: string;
+  filename: string;
+  basename: string;
+  extension: string;
+  folder: string | null;
+  folders: string[];
+  /** SHA-256 hash of the source file bytes. */
+  hash: string;
+  config: JsonDbOptions;
+  readText(): Promise<string>;
+  readBuffer(): Promise<Buffer>;
+};
+
+export type JsonDbSourceReaderDataResult = {
+  kind: 'data';
+  data: unknown;
+  /** Format label stored in source metadata. Defaults to the reader name. */
+  format?: string;
+  /** Explicit resource name. Required when one file returns multiple sources. */
+  resourceName?: string;
+};
+
+export type JsonDbSourceReaderSchemaResult = {
+  kind: 'schema';
+  schema: unknown;
+  /** Schema source label, such as "jsonc", "mjs", or a custom format. */
+  format?: string;
+  /** Explicit resource name. Required when one file returns multiple sources. */
+  resourceName?: string;
+};
+
+export type JsonDbSourceReaderSingleResult = JsonDbSourceReaderDataResult | JsonDbSourceReaderSchemaResult;
+
+export type JsonDbSourceReaderResult =
+  | JsonDbSourceReaderSingleResult
+  | Array<JsonDbSourceReaderResult>
+  | null
+  | undefined;
+
+export type JsonDbSourceReader = {
+  name: string;
+  match(context: JsonDbSourceReaderContext): boolean | Promise<boolean>;
+  read(context: JsonDbSourceReaderContext): JsonDbSourceReaderResult | Promise<JsonDbSourceReaderResult>;
+};
+
+export type JsonDbSourcesOptions = {
+  /** Custom source readers. They run before built-in JSON, JSONC, CSV, and .schema.mjs readers. */
+  readers?: JsonDbSourceReader[];
+};
+
 export type JsonDbRestFormatContext = {
   db: unknown;
   resource: Record<string, unknown>;
@@ -102,6 +156,8 @@ export type JsonDbOptions = {
   schemaOutFile?: string | null;
   /** Optional visitor hooks for customizing generated schema manifest output. */
   schemaManifest?: JsonDbSchemaManifestOptions;
+  /** Optional source readers for custom schema or data file formats. */
+  sources?: JsonDbSourcesOptions;
   /** "mirror" keeps source fixtures unchanged; "source" may write generated ids back to plain .json fixtures. */
   mode?: 'mirror' | 'source';
   /** Run sync automatically when opening the package API. */

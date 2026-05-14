@@ -306,3 +306,240 @@ test('source load errors report the file and keep other resources available when
   assert.match(project.diagnostics[0].message, /Could not load db\/broken\.json/);
   assert.match(await readFile(path.join(cwd, '.jsondb/schema.generated.json'), 'utf8'), /SOURCE_LOAD_FAILED/);
 });
+
+test('custom source readers can load data files with source context helpers', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    sources: {
+      readers: [
+        {
+          name: 'pipe-data',
+          match({ file }) {
+            return file.endsWith('.pipe');
+          },
+          async read({ file, sourceFile, filename, extension, config, hash, readText, readBuffer }) {
+            if (file !== 'db/users.pipe' || filename !== 'users.pipe' || extension !== '.pipe') {
+              throw new Error('unexpected source context');
+            }
+            if (!sourceFile.endsWith('/db/users.pipe') || !config.cwd) {
+              throw new Error('missing absolute source context');
+            }
+            const text = await readText();
+            const buffer = await readBuffer();
+            if (buffer.length !== Buffer.byteLength(text) || !/^[a-f0-9]{64}$/.test(hash)) {
+              throw new Error('missing source helpers');
+            }
+            return {
+              kind: 'data',
+              resourceName: 'users',
+              format: 'pipe',
+              data: text.trim().split('\\n').map((line) => {
+                const [id, name] = line.split('|');
+                return { id, name };
+              }),
+            };
+          },
+        },
+      ],
+    },
+  };`);
+  await writeFixture(cwd, 'users.pipe', 'u_1|Ada Lovelace');
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+
+  assert.equal(result.schema.resources.users.kind, 'collection');
+  assert.equal(result.schema.resources.users.fields.name.type, 'string');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8')), [
+    {
+      id: 'u_1',
+      name: 'Ada Lovelace',
+    },
+  ]);
+  const metadata = JSON.parse(await readFile(path.join(cwd, '.jsondb/state/.sources.json'), 'utf8'));
+  assert.equal(metadata.resources.users.format, 'pipe');
+  assert.equal(metadata.resources.users.path, 'db/users.pipe');
+});
+
+test('custom source readers can load schema sources', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    sources: {
+      readers: [
+        {
+          name: 'model-schema',
+          match({ file }) {
+            return file.endsWith('.model');
+          },
+          read() {
+            return {
+              kind: 'schema',
+              resourceName: 'users',
+              format: 'model',
+              schema: {
+                kind: 'collection',
+                idField: 'id',
+                fields: {
+                  id: { type: 'string', required: true },
+                  email: { type: 'string', required: true },
+                  role: { type: 'enum', values: ['admin', 'user'], default: 'user' },
+                },
+                seed: [
+                  { id: 'u_1', email: 'ada@example.com' },
+                ],
+              },
+            };
+          },
+        },
+      ],
+    },
+  };`);
+  await writeFixture(cwd, 'users.model', 'collection users');
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+  const users = result.resources.find((resource) => resource.name === 'users');
+
+  assert.equal(users.schemaSource, 'model');
+  assert.equal(result.schema.resources.users.fields.role.default, 'user');
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8')), [
+    {
+      id: 'u_1',
+      email: 'ada@example.com',
+      role: 'user',
+    },
+  ]);
+});
+
+test('custom source readers run before built-in readers and can override them', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    sources: {
+      readers: [
+        {
+          name: 'json-override',
+          match({ file }) {
+            return file === 'db/users.json';
+          },
+          async read({ readText }) {
+            const text = await readText();
+            const [id, name] = text.trim().split('|');
+            return {
+              kind: 'data',
+              resourceName: 'users',
+              format: 'pipe-json',
+              data: [{ id, name }],
+            };
+          },
+        },
+      ],
+    },
+  };`);
+  await writeFixture(cwd, 'users.json', 'u_1|Override JSON');
+
+  const config = await loadConfig({ cwd });
+  await syncJsonFixtureDb(config);
+
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8')), [
+    {
+      id: 'u_1',
+      name: 'Override JSON',
+    },
+  ]);
+});
+
+test('custom source readers can return multiple named sources from one file', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    sources: {
+      readers: [
+        {
+          name: 'bundle',
+          match({ file }) {
+            return file.endsWith('.bundle');
+          },
+          read() {
+            return [
+              {
+                kind: 'data',
+                resourceName: 'users',
+                format: 'bundle',
+                data: [{ id: 'u_1', name: 'Ada' }],
+              },
+              {
+                kind: 'schema',
+                resourceName: 'settings',
+                format: 'bundle',
+                schema: {
+                  kind: 'document',
+                  fields: {
+                    theme: { type: 'string', default: 'light' },
+                  },
+                  seed: {},
+                },
+              },
+            ];
+          },
+        },
+      ],
+    },
+  };`);
+  await writeFixture(cwd, 'app.bundle', 'bundle content');
+
+  const config = await loadConfig({ cwd });
+  const result = await syncJsonFixtureDb(config);
+
+  assert.deepEqual(Object.keys(result.schema.resources), ['settings', 'users']);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/users.json'), 'utf8')), [
+    {
+      id: 'u_1',
+      name: 'Ada',
+    },
+  ]);
+  assert.deepEqual(JSON.parse(await readFile(path.join(cwd, '.jsondb/state/settings.json'), 'utf8')), {
+    theme: 'light',
+  });
+});
+
+test('custom multi-source readers must name every returned source', async () => {
+  const cwd = await makeProject();
+  await writeConfig(cwd, `export default {
+    sources: {
+      readers: [
+        {
+          name: 'bad-bundle',
+          match({ file }) {
+            return file.endsWith('.bundle');
+          },
+          read() {
+            return [
+              {
+                kind: 'data',
+                resourceName: 'users',
+                data: [{ id: 'u_1' }],
+              },
+              {
+                kind: 'data',
+                data: [{ id: 'p_1' }],
+              },
+            ];
+          },
+        },
+      ],
+    },
+  };`);
+  await writeFixture(cwd, 'app.bundle', 'bundle content');
+
+  const config = await loadConfig({ cwd });
+
+  await assert.rejects(
+    () => syncJsonFixtureDb(config),
+    (error) => {
+      assert.equal(error.diagnostics?.[0]?.code, 'SOURCE_READER_RESOURCE_NAME_REQUIRED');
+      assert.equal(error.diagnostics[0].file, 'db/app.bundle');
+      assert.match(error.diagnostics[0].message, /bad-bundle/);
+      assert.match(error.diagnostics[0].hint, /resourceName/);
+      return true;
+    },
+  );
+});

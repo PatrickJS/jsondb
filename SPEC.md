@@ -391,6 +391,39 @@ For v1, support:
 
 Avoid `.ts` schema sources in v1 unless the project adds a build step or TypeScript loader. Node.js does not execute TypeScript directly in the same way it executes `.mjs`.
 
+## Source Readers
+
+All built-in source loading should use the same reader pipeline:
+
+```txt
+.json data
+.jsonc data
+.csv data
+.schema.json
+.schema.jsonc
+.schema.mjs
+```
+
+Projects may add `sources.readers` in `jsondb.config.mjs` to parse custom files into raw jsondb inputs:
+
+```ts
+type JsonDbSourceReader = {
+  name: string;
+  match(context): boolean | Promise<boolean>;
+  read(context): JsonDbSourceReaderResult | Promise<JsonDbSourceReaderResult>;
+};
+
+type JsonDbSourceReaderResult =
+  | { kind: 'data'; data: unknown; format?: string; resourceName?: string }
+  | { kind: 'schema'; schema: unknown; format?: string; resourceName?: string }
+  | Array<JsonDbSourceReaderResult>
+  | null;
+```
+
+Custom readers run before built-in readers. Returning `null` lets later readers try; the first non-null result owns the file. Reader context includes repo-relative file path, absolute source path, parsed fixture path metadata, config, source hash, `readText()`, and `readBuffer()`.
+
+Readers must return raw data or raw schema only. Resource normalization, diagnostics, type generation, schema manifest output, REST/GraphQL metadata, generated ids, and runtime sync stay centralized in jsondb. A reader may return multiple sources from one file, but each result must include `resourceName`; otherwise jsondb reports a structured diagnostic.
+
 ## Type-Only Fixtures
 
 A schema file can define a resource without seed data.

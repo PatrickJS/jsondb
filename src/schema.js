@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseFixturePath, resourceNameFromPath } from './config-public.js';
@@ -19,35 +19,16 @@ export async function loadProjectSchema(config) {
   const diagnostics = [];
 
   for (const filename of files) {
-    if (filename.endsWith('.schema.json') || filename.endsWith('.schema.jsonc') || filename.endsWith('.schema.mjs')) {
-      if (config.schema?.source === 'data') {
-        continue;
+    const result = await readSourceFile(config, filename);
+    diagnostics.push(...result.diagnostics);
+
+    for (const source of result.sources) {
+      trackResourceSource(resourceSources, source.name, source.file, source.kind);
+      if (source.kind === 'schema') {
+        schemaFiles.set(source.name, source);
+      } else {
+        dataFiles.set(source.name, source);
       }
-
-      if (filename.endsWith('.jsonc') && config.schema?.allowJsonc === false) {
-        continue;
-      }
-
-      const file = sourceFileLabel(config, filename);
-      const name = resolveSourceResourceName(config, filename);
-      trackResourceSource(resourceSources, name, file, 'schema');
-      schemaFiles.set(name, path.join(config.sourceDir, filename));
-      continue;
-    }
-
-    if (filename.endsWith('.json') || filename.endsWith('.jsonc') || filename.endsWith('.csv')) {
-      if (config.schema?.source === 'schema') {
-        continue;
-      }
-
-      if (filename.endsWith('.jsonc') && config.schema?.allowJsonc === false) {
-        continue;
-      }
-
-      const file = sourceFileLabel(config, filename);
-      const name = resolveSourceResourceName(config, filename);
-      trackResourceSource(resourceSources, name, file, 'data');
-      dataFiles.set(name, path.join(config.sourceDir, filename));
     }
   }
 
@@ -56,28 +37,10 @@ export async function loadProjectSchema(config) {
   diagnostics.push(...duplicateResourceDiagnostics(resourceSources));
 
   for (const name of resourceNames) {
-    const dataPath = dataFiles.get(name);
-    const schemaPath = schemaFiles.get(name);
-    let rawDataSource;
-    let rawSchema;
-
-    if (dataPath) {
-      try {
-        rawDataSource = await loadDataFile(dataPath);
-      } catch (error) {
-        diagnostics.push(sourceLoadDiagnostic(error, dataPath, name, config));
-      }
-    }
-
-    const rawData = rawDataSource?.data;
-
-    if (schemaPath) {
-      try {
-        rawSchema = await loadSchemaFile(schemaPath);
-      } catch (error) {
-        diagnostics.push(sourceLoadDiagnostic(error, schemaPath, name, config));
-      }
-    }
+    const dataSource = dataFiles.get(name);
+    const schemaSource = schemaFiles.get(name);
+    const rawData = dataSource?.data;
+    const rawSchema = schemaSource?.schema;
 
     if (rawData === undefined && rawSchema === undefined) {
       continue;
@@ -85,10 +48,11 @@ export async function loadProjectSchema(config) {
 
     const resource = buildResource({
       name,
-      dataPath: rawDataSource ? dataPath : undefined,
-      dataFormat: rawDataSource?.format,
-      dataHash: rawDataSource?.hash,
-      schemaPath: rawSchema ? schemaPath : undefined,
+      dataPath: dataSource?.sourceFile,
+      dataFormat: dataSource?.format,
+      dataHash: dataSource?.hash,
+      schemaPath: schemaSource?.sourceFile,
+      schemaSource: schemaSource?.format,
       rawData,
       rawSchema,
       config,
@@ -599,7 +563,7 @@ function isPlainRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, rawData, rawSchema, config }) {
+function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, schemaSource, rawData, rawSchema, config }) {
   if (rawSchema) {
     const kind = rawSchema.kind ?? inferKindFromData(rawData) ?? 'collection';
     const idField = rawSchema.idField ?? config.collections?.[name]?.idField ?? 'id';
@@ -625,7 +589,7 @@ function buildResource({ name, dataPath, dataFormat, dataHash, schemaPath, rawDa
       dataFormat,
       dataHash,
       schemaPath,
-      schemaSource: schemaSourceFromPath(schemaPath),
+      schemaSource: schemaSource ?? null,
       typeSource: 'schema',
       generatedIds: idResult.generated,
     });
@@ -761,61 +725,288 @@ async function listSourceFilesInDirectory(directory, prefix = '') {
   return files.sort();
 }
 
-async function loadDataFile(filePath) {
-  const text = await readText(filePath);
-  const hash = createHash('sha256').update(text).digest('hex');
-  if (filePath.endsWith('.csv')) {
+async function readSourceFile(config, filename) {
+  let context;
+  try {
+    context = await createSourceReaderContext(config, filename);
+  } catch (error) {
+    const sourceFile = path.join(config.sourceDir, filename);
     return {
-      data: parseCsvRecords(text, filePath),
-      format: 'csv',
-      hash,
+      sources: [],
+      diagnostics: [sourceLoadDiagnostic(error, sourceFile, resolveSourceResourceName(config, filename), config, {
+        readerName: 'jsondb:source-context',
+      })],
     };
   }
 
-  if (filePath.endsWith('.jsonc')) {
+  const readers = sourceReaders(config);
+  const diagnostics = [];
+
+  for (const reader of readers) {
+    let matches = false;
+    try {
+      matches = await reader.match(context);
+    } catch (error) {
+      return {
+        sources: [],
+        diagnostics: [sourceReaderDiagnostic(error, context, reader)],
+      };
+    }
+
+    if (!matches) {
+      continue;
+    }
+
+    let result;
+    try {
+      result = await reader.read(context);
+    } catch (error) {
+      return {
+        sources: [],
+        diagnostics: [sourceLoadDiagnostic(error, context.sourceFile, resolveSourceResourceName(config, filename), config, {
+          readerName: reader.name,
+        })],
+      };
+    }
+
+    if (result === null || result === undefined) {
+      continue;
+    }
+
+    const normalized = normalizeSourceReaderResult(result, context, reader);
+    diagnostics.push(...normalized.diagnostics);
     return {
-      data: parseJsonc(text, filePath),
-      format: 'jsonc',
-      hash,
+      sources: normalized.sources,
+      diagnostics,
     };
   }
 
   return {
-    data: JSON.parse(text),
-    format: 'json',
-    hash,
+    sources: [],
+    diagnostics,
   };
 }
 
-async function loadSchemaFile(filePath) {
-  if (filePath.endsWith('.mjs')) {
-    const url = pathToFileURL(filePath);
-    url.searchParams.set('jsondbSchemaLoad', String(Date.now()));
-    const module = await import(url.href);
-    return module.default;
-  }
+async function createSourceReaderContext(config, filename) {
+  const sourceFile = path.join(config.sourceDir, filename);
+  const file = sourceFileLabel(config, filename);
+  const parsed = parseFixturePath(file);
+  let buffer;
+  let text;
 
-  if (filePath.endsWith('.schema.json')) {
-    return JSON.parse(await readText(filePath));
-  }
+  const readBuffer = async () => {
+    buffer ??= await readFile(sourceFile);
+    return buffer;
+  };
 
-  return parseJsonc(await readText(filePath), filePath);
+  const hash = createHash('sha256').update(await readBuffer()).digest('hex');
+
+  return {
+    ...parsed,
+    config,
+    file,
+    sourceFile,
+    hash,
+    async readBuffer() {
+      return readBuffer();
+    },
+    async readText() {
+      text ??= (await readBuffer()).toString('utf8');
+      return text;
+    },
+  };
 }
 
-function schemaSourceFromPath(schemaPath) {
-  if (!schemaPath) {
-    return null;
+function sourceReaders(config) {
+  return [
+    ...normalizeUserSourceReaders(config.sources?.readers),
+    ...builtInSourceReaders(),
+  ];
+}
+
+function normalizeUserSourceReaders(readers) {
+  if (!Array.isArray(readers)) {
+    return [];
   }
 
-  if (schemaPath.endsWith('.mjs')) {
-    return 'mjs';
+  return readers.filter((reader) => reader && typeof reader.match === 'function' && typeof reader.read === 'function');
+}
+
+function builtInSourceReaders() {
+  return [
+    {
+      name: 'jsondb:schema-mjs',
+      match: ({ file, config }) => config.schema?.source !== 'data' && file.endsWith('.schema.mjs'),
+      async read({ sourceFile }) {
+        const url = pathToFileURL(sourceFile);
+        url.searchParams.set('jsondbSchemaLoad', String(Date.now()));
+        const module = await import(url.href);
+        return {
+          kind: 'schema',
+          format: 'mjs',
+          schema: module.default,
+        };
+      },
+    },
+    {
+      name: 'jsondb:schema-json',
+      match: ({ file, config }) => config.schema?.source !== 'data' && file.endsWith('.schema.json'),
+      async read({ readText }) {
+        return {
+          kind: 'schema',
+          format: 'json',
+          schema: JSON.parse(await readText()),
+        };
+      },
+    },
+    {
+      name: 'jsondb:schema-jsonc',
+      match: ({ file, config }) => (
+        config.schema?.source !== 'data'
+        && config.schema?.allowJsonc !== false
+        && file.endsWith('.schema.jsonc')
+      ),
+      async read({ readText, sourceFile }) {
+        return {
+          kind: 'schema',
+          format: 'jsonc',
+          schema: parseJsonc(await readText(), sourceFile),
+        };
+      },
+    },
+    {
+      name: 'jsondb:data-csv',
+      match: ({ file, config }) => config.schema?.source !== 'schema' && file.endsWith('.csv'),
+      async read({ readText, sourceFile }) {
+        return {
+          kind: 'data',
+          format: 'csv',
+          data: parseCsvRecords(await readText(), sourceFile),
+        };
+      },
+    },
+    {
+      name: 'jsondb:data-jsonc',
+      match: ({ file, config }) => (
+        config.schema?.source !== 'schema'
+        && config.schema?.allowJsonc !== false
+        && !isSchemaSourceFile(file)
+        && file.endsWith('.jsonc')
+      ),
+      async read({ readText, sourceFile }) {
+        return {
+          kind: 'data',
+          format: 'jsonc',
+          data: parseJsonc(await readText(), sourceFile),
+        };
+      },
+    },
+    {
+      name: 'jsondb:data-json',
+      match: ({ file, config }) => config.schema?.source !== 'schema' && !isSchemaSourceFile(file) && file.endsWith('.json'),
+      async read({ readText }) {
+        return {
+          kind: 'data',
+          format: 'json',
+          data: JSON.parse(await readText()),
+        };
+      },
+    },
+  ];
+}
+
+function isSchemaSourceFile(file) {
+  return file.endsWith('.schema.json') || file.endsWith('.schema.jsonc') || file.endsWith('.schema.mjs');
+}
+
+function normalizeSourceReaderResult(result, context, reader) {
+  const rawSources = flattenSourceReaderResult(result);
+  const diagnostics = [];
+  const sources = [];
+  const multipleSources = rawSources.length > 1;
+
+  for (const [index, rawSource] of rawSources.entries()) {
+    if (!rawSource || typeof rawSource !== 'object' || Array.isArray(rawSource)) {
+      diagnostics.push(invalidSourceReaderResultDiagnostic(context, reader, `Result ${index + 1} must be an object.`));
+      continue;
+    }
+
+    if (rawSource.kind !== 'data' && rawSource.kind !== 'schema') {
+      diagnostics.push(invalidSourceReaderResultDiagnostic(context, reader, `Result ${index + 1} must set kind to "data" or "schema".`));
+      continue;
+    }
+
+    if (multipleSources && !rawSource.resourceName) {
+      diagnostics.push({
+        code: 'SOURCE_READER_RESOURCE_NAME_REQUIRED',
+        severity: 'error',
+        file: context.file,
+        message: `Source reader "${reader.name}" returned multiple sources from ${context.file}, but result ${index + 1} does not include resourceName.`,
+        hint: 'Add resourceName to every source returned from a multi-source reader.',
+        details: {
+          reader: reader.name,
+          sourceIndex: index,
+          file: context.file,
+        },
+      });
+      continue;
+    }
+
+    if (!sourceKindAllowed(context.config, rawSource.kind)) {
+      continue;
+    }
+
+    if (rawSource.kind === 'data' && !Object.prototype.hasOwnProperty.call(rawSource, 'data')) {
+      diagnostics.push(invalidSourceReaderResultDiagnostic(context, reader, `Data result ${index + 1} must include data.`));
+      continue;
+    }
+
+    if (rawSource.kind === 'schema' && !Object.prototype.hasOwnProperty.call(rawSource, 'schema')) {
+      diagnostics.push(invalidSourceReaderResultDiagnostic(context, reader, `Schema result ${index + 1} must include schema.`));
+      continue;
+    }
+
+    const name = rawSource.resourceName
+      ? String(rawSource.resourceName)
+      : resolveSourceResourceName(context.config, path.relative(context.config.sourceDir, context.sourceFile));
+    const format = rawSource.format ? String(rawSource.format) : reader.name;
+
+    sources.push({
+      kind: rawSource.kind,
+      name,
+      file: context.file,
+      sourceFile: context.sourceFile,
+      format,
+      hash: context.hash,
+      data: rawSource.kind === 'data' ? rawSource.data : undefined,
+      schema: rawSource.kind === 'schema' ? rawSource.schema : undefined,
+    });
   }
 
-  if (schemaPath.endsWith('.schema.json')) {
-    return 'json';
+  return {
+    sources,
+    diagnostics,
+  };
+}
+
+function flattenSourceReaderResult(result) {
+  if (result === null || result === undefined) {
+    return [];
   }
 
-  return 'jsonc';
+  if (Array.isArray(result)) {
+    return result.flatMap((item) => flattenSourceReaderResult(item));
+  }
+
+  return [result];
+}
+
+function sourceKindAllowed(config, kind) {
+  if (kind === 'data') {
+    return config.schema?.source !== 'schema';
+  }
+
+  return config.schema?.source !== 'data';
 }
 
 function resolveSourceResourceName(config, filename) {
@@ -1218,7 +1409,7 @@ function serializeResource(resource) {
   };
 }
 
-function sourceLoadDiagnostic(error, filePath, resource, config) {
+function sourceLoadDiagnostic(error, filePath, resource, config, options = {}) {
   const relativePath = path.relative(config.cwd, filePath);
   return {
     code: 'SOURCE_LOAD_FAILED',
@@ -1229,8 +1420,39 @@ function sourceLoadDiagnostic(error, filePath, resource, config) {
     hint: error.hint ?? 'Fix this source file and jsondb will reload the rest of the project.',
     details: {
       path: relativePath,
+      reader: options.readerName,
       parserMessage: error.message,
       code: error.code,
+    },
+  };
+}
+
+function sourceReaderDiagnostic(error, context, reader) {
+  return {
+    code: 'SOURCE_READER_FAILED',
+    severity: 'error',
+    file: context.file,
+    message: `Source reader "${reader.name}" could not inspect ${context.file}: ${error.message}`,
+    hint: 'Update the source reader or return null so another reader can handle this file.',
+    details: {
+      reader: reader.name,
+      path: context.file,
+      parserMessage: error.message,
+      code: error.code,
+    },
+  };
+}
+
+function invalidSourceReaderResultDiagnostic(context, reader, message) {
+  return {
+    code: 'SOURCE_READER_INVALID_RESULT',
+    severity: 'error',
+    file: context.file,
+    message: `Source reader "${reader.name}" returned an invalid result for ${context.file}: ${message}`,
+    hint: 'Return { kind: "data", data } or { kind: "schema", schema }, optionally with format and resourceName.',
+    details: {
+      reader: reader.name,
+      path: context.file,
     },
   };
 }

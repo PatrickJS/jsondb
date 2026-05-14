@@ -108,6 +108,7 @@ Use this table to start with defaults and then jump to the config only when a us
 | Share local data across tests and demos | Default sync output in `.jsondb/state`                                      | Test imports need stable generated types: [committed generated types](#committed-generated-types)      |
 | Keep old demo pages while refactoring   | Main `db/` for the new shape                                                | Legacy pages need their own source shape: [database forks](#database-forks)                           |
 | Import spreadsheet or product data      | `db/*.csv` or viewer CSV import                                             | CSVs belong in another folder: [different fixture folder](#different-fixture-folder)                   |
+| Keep another schema/data format         | Built-in JSON, JSONC, CSV, or `.schema.mjs` readers                         | Add a [source reader](#source-readers) that returns jsondb schema/data inputs                          |
 | Build model-driven admin/CMS screens    | Nested fixtures such as `db/cms/pages.schema.jsonc`                         | Forms need committed field metadata: [schema manifest output](#schema-manifest-output)                 |
 | Evolve fuzzy data into a contract       | Add `db/<name>.schema.json` or `.schema.jsonc`                              | Schema drift should fail instead of warn: [schema strictness](#schema-strictness)                      |
 | Find fixture consistency issues         | `npm run db -- doctor`                                                      | CI should fail on warnings: `npm run db -- check --strict`                                            |
@@ -123,6 +124,7 @@ The defaults are designed to be useful without `jsondb.config.mjs`. When you do 
 | ------------------------------------ | ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Typed, commented config              | No config file required       | [Likely first config](#likely-first-config)                               | Get editor autocomplete and know the common values when you add config. |
 | Fixture folder                       | `./db`                        | [Different fixture folder](#different-fixture-folder)                     | Keep fixtures in a package, example, or app-specific folder.            |
+| Custom source formats                | Built-in readers               | [Source readers](#source-readers)                                         | Parse YAML, Excel, CMS exports, or model files into jsondb inputs.      |
 | Nested resource names                | Fixture basename              | [Nested fixture folders](#nested-fixture-folders)                         | Avoid collisions and control REST/GraphQL names for organized fixtures. |
 | Runtime state behavior               | `.jsondb`, mirror mode        | [Mirror vs source mode](#mirror-vs-source-mode)                           | Keep source fixtures clean, or intentionally write generated ids back.  |
 | Importable generated types           | `.jsondb/types/index.ts`      | [Committed generated types](#committed-generated-types)                   | Let TypeScript imports work in CI and fresh checkouts before sync runs. |
@@ -235,6 +237,45 @@ By default, unknown fields produce warnings for local development. Use [schema s
 Schema fields can use `nullable: true` when `null` is an intentional value. `datetime` fields validate as strings and generate TypeScript `string` types. Object fields can set `additionalProperties: true` when nested keys are intentionally flexible.
 
 Field constraints are checked during `sync`, schema validation, package API writes, REST writes, and GraphQL mutations. Use `unique: true` for collection fields that must not repeat, `min`/`max` for numbers, `minLength`/`maxLength` for strings or arrays, and `pattern` for string regular expression checks.
+
+## Source Readers
+
+jsondb reads all source files through a reader pipeline. The built-in readers handle `.json`, `.jsonc`, `.csv`, `.schema.json`, `.schema.jsonc`, and `.schema.mjs`. Add `sources.readers` when another file format should remain the source of truth.
+
+Readers parse files into raw jsondb inputs. jsondb still owns resource naming, schema normalization, validation, generated ids, TypeScript types, schema manifests, REST, GraphQL, and sync.
+
+```js
+// jsondb.config.mjs
+// @ts-check
+import { defineConfig } from 'jsondb/config';
+
+export default defineConfig({
+  sources: {
+    readers: [
+      {
+        name: 'pipe-data',
+        match({ file }) {
+          return file.endsWith('.pipe');
+        },
+        async read({ readText }) {
+          const rows = (await readText()).trim().split('\n');
+          return {
+            kind: 'data',
+            resourceName: 'users',
+            format: 'pipe',
+            data: rows.map((row) => {
+              const [id, name] = row.split('|');
+              return { id, name };
+            }),
+          };
+        },
+      },
+    ],
+  },
+});
+```
+
+Custom readers run before built-in readers. The first reader that returns a result owns the file; returning `null` lets the next reader try. A reader can also return `{ kind: 'schema', schema }` for schema-first sources. One file may return multiple sources, such as one Excel workbook with several sheets, but every returned source must include `resourceName`.
 
 ## Fixture Styles
 
