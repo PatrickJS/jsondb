@@ -1,0 +1,5 @@
+{
+  "title": "Data First",
+  "description": "Plain JSON fixtures with inferred schema, generated types, REST routes, and a writable mirror.",
+  "tags": ["data-first", "inference", "rest"]
+}

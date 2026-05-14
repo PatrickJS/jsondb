@@ -19,6 +19,8 @@ By default jsondb runs in `mode: 'mirror'`, so app writes go into `.jsondb/state
 
 Local responses include a small default delay range of `30-100ms` so loading states are visible during UI work. Configure `mock.delay` to `0` to disable it, `50` for a fixed delay, or `[50, 300]` for a different range.
 
+For the codebase map and local trust boundaries, see [docs/architecture.md](./docs/architecture.md).
+
 ## Quick Start
 
 Until this package is published, install it from GitHub in the app or package that will use it:
@@ -96,6 +98,22 @@ The default sync output is gitignored runtime state:
 ```
 
 `serve` syncs on startup, watches the fixture folder, refreshes valid resources when files change, and surfaces file-specific diagnostics in the viewer without breaking unrelated resources.
+
+## Which Example Should I Start With?
+
+The examples are a learning path. Run any example with `node ./src/cli.js sync --cwd ./examples/<name>` and `node ./src/cli.js serve --cwd ./examples/<name>`, or run `npm run examples` to start every viewer from one index.
+
+| If you want to learn...                       | Start with                                      | What it shows                                                     |
+| --------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- |
+| The shortest schema-backed workflow           | [`examples/basic`](./examples/basic)            | Sync, viewer, REST create, committed generated types              |
+| Plain data before schemas exist               | [`examples/data-first`](./examples/data-first)  | Inferred collections, documents, routes, and types                |
+| Contract-first resources                      | [`examples/schema-first`](./examples/schema-first) | Schema-only resources, empty seed records, committed types     |
+| Calling jsondb from app or test code          | [`examples/rest-client`](./examples/rest-client) | `createJsonDbClient`, direct REST calls, REST batching          |
+| Related local records                         | [`examples/relations`](./examples/relations)    | Relation metadata, `expand`, and nested `select`                  |
+| CSV as the source of truth                    | [`examples/csv`](./examples/csv)                | CSV inference, source hashes, mirror refreshes                    |
+| Admin/CMS-style field metadata                | [`examples/schema-manifest`](./examples/schema-manifest) | `schemaOutFile` and manifest customization              |
+| Diagnostics for schema/data drift             | [`examples/diagnostics`](./examples/diagnostics) | Warnings surfaced without breaking unrelated resources          |
+| Several advanced features together            | [`examples/advanced`](./examples/advanced)      | `.schema.mjs`, mixed mode, defaults, nested objects               |
 
 ## Use Cases
 

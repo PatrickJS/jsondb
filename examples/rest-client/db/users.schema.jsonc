@@ -1,0 +1,42 @@
+{
+  "kind": "collection",
+  "idField": "id",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable user id."
+    },
+    "name": {
+      "type": "string",
+      "required": true,
+      "description": "Display name shown in the app."
+    },
+    "email": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "description": "Email address used for local sign-in."
+    },
+    "role": {
+      "type": "enum",
+      "values": ["admin", "user"],
+      "default": "user",
+      "description": "Local authorization role."
+    }
+  },
+  "seed": [
+    {
+      "id": "u_1",
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "role": "admin"
+    },
+    {
+      "id": "u_2",
+      "name": "Grace Hopper",
+      "email": "grace@example.com",
+      "role": "user"
+    }
+  ]
+}

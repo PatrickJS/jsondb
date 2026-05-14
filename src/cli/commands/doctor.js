@@ -1,7 +1,13 @@
 import { runJsonDbDoctor } from '../../doctor.js';
-import { printDoctorResult } from '../output.js';
+import { isHelpRequested } from '../args.js';
+import { printDoctorHelp, printDoctorResult } from '../output.js';
 
 export async function runDoctor(config, args) {
+  if (isHelpRequested(args)) {
+    printDoctorHelp();
+    return;
+  }
+
   const result = await runJsonDbDoctor(config);
 
   if (args.includes('--json')) {

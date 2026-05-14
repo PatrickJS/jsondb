@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import http from 'node:http';
-import { readdir } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { startJsonDbServer } from '../src/server.js';
 
@@ -84,8 +84,10 @@ export async function findExamples(examplesDir) {
     }
 
     const cwd = path.join(examplesDir, entry.name);
+    const metadata = await readExampleMetadata(cwd, entry.name);
     examples.push({
       name: entry.name,
+      ...metadata,
       cwd,
       relativePath: path.relative(root, cwd),
     });
@@ -99,11 +101,13 @@ export function renderExamplesIndex(examples) {
         <article class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <h2 class="text-base font-semibold text-slate-950">${escapeHtml(example.name)}</h2>
+              <h2 class="text-base font-semibold text-slate-950">${escapeHtml(example.title ?? titleFromName(example.name))}</h2>
               <p class="mt-1 text-sm text-slate-600">${escapeHtml(example.relativePath)}</p>
             </div>
             <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">:${example.port}</span>
           </div>
+          <p class="mt-3 text-sm text-slate-700">${escapeHtml(example.description ?? '')}</p>
+          <div class="mt-3 flex flex-wrap gap-1.5">${renderTags(example.tags ?? [])}</div>
           <div class="mt-4 flex flex-wrap gap-2">
             <a class="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800" href="${example.viewerUrl}">Open viewer</a>
             <a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:border-emerald-700" href="${example.url}/__jsondb/schema">Schema JSON</a>
@@ -137,6 +141,9 @@ ${rows}
 function publicExample(example) {
   return {
     name: example.name,
+    title: example.title,
+    description: example.description,
+    tags: example.tags,
     relativePath: example.relativePath,
     url: example.url,
     viewerUrl: example.viewerUrl,
@@ -150,6 +157,46 @@ function parseArgs(args) {
     port: valueAfter(args, '--port'),
     firstExamplePort: valueAfter(args, '--first-example-port'),
   };
+}
+
+async function readExampleMetadata(cwd, name) {
+  const defaults = {
+    title: titleFromName(name),
+    description: 'Local jsondb example.',
+    tags: [],
+  };
+
+  try {
+    const metadata = JSON.parse(await readFile(path.join(cwd, 'example.json'), 'utf8'));
+    return {
+      title: String(metadata.title ?? defaults.title),
+      description: String(metadata.description ?? defaults.description),
+      tags: Array.isArray(metadata.tags) ? metadata.tags.map((tag) => String(tag)) : defaults.tags,
+    };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return defaults;
+    }
+    throw new Error(`Could not read ${path.join(cwd, 'example.json')}: ${error.message}`);
+  }
+}
+
+function renderTags(tags) {
+  if (tags.length === 0) {
+    return '';
+  }
+
+  return tags.map((tag) => (
+    `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">${escapeHtml(tag)}</span>`
+  )).join('');
+}
+
+function titleFromName(name) {
+  return String(name)
+    .split(/[-_]+/g)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 function valueAfter(args, flag) {

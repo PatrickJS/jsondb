@@ -2,10 +2,15 @@ import { watch } from 'node:fs';
 import path from 'node:path';
 import { loadProjectSchema } from '../../schema.js';
 import { generateTypes } from '../../types.js';
-import { valueAfter } from '../args.js';
-import { printDiagnostic } from '../output.js';
+import { isHelpRequested, valueAfter } from '../args.js';
+import { printDiagnostic, printTypesHelp } from '../output.js';
 
 export async function runTypes(config, args) {
+  if (isHelpRequested(args)) {
+    printTypesHelp();
+    return;
+  }
+
   if (args.includes('--watch')) {
     await runTypesOnce(config, args);
     console.log(`Watching ${path.relative(config.cwd, config.sourceDir) || '.'}`);

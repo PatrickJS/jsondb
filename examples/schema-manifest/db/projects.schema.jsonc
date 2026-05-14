@@ -1,0 +1,48 @@
+{
+  "kind": "collection",
+  "idField": "id",
+  "description": "Projects used to demonstrate generated form metadata.",
+  "fields": {
+    "id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable project id."
+    },
+    "name": {
+      "type": "string",
+      "required": true,
+      "description": "Project display name."
+    },
+    "ownerId": {
+      "type": "string",
+      "required": true,
+      "description": "Owner user id.",
+      "relation": {
+        "name": "owner",
+        "to": "users",
+        "toField": "id",
+        "cardinality": "one"
+      }
+    },
+    "status": {
+      "type": "enum",
+      "values": ["planned", "active", "paused", "done"],
+      "default": "planned",
+      "description": "Workflow status for local admin forms."
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Internal project notes."
+    }
+  },
+  "seed": [
+    {
+      "id": "proj_1",
+      "name": "Local admin prototype",
+      "ownerId": "u_1",
+      "status": "active",
+      "notes": "Uses generated manifest metadata to choose form controls."
+    }
+  ]
+}

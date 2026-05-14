@@ -38,3 +38,73 @@ Options:
   --config <file>   Config file path
 `);
 }
+
+export function printTypesHelp() {
+  console.log(`jsondb types
+
+Usage:
+  jsondb types [--watch] [--out <file>]
+
+Options:
+  --watch        Regenerate types when fixture sources change
+  --out <file>   Write generated types to this path
+  --cwd <dir>     Project directory
+  --config <file> Config file path
+`);
+}
+
+export function printSchemaHelp() {
+  console.log(`jsondb schema
+
+Usage:
+  jsondb schema [resource]
+  jsondb schema manifest [--out <file>]
+  jsondb schema validate
+
+Options:
+  --out <file>   Write schema manifest output to this path
+  --cwd <dir>     Project directory
+  --config <file> Config file path
+`);
+}
+
+export function printDoctorHelp() {
+  console.log(`jsondb doctor
+
+Usage:
+  jsondb doctor [--strict] [--json]
+  jsondb check [--strict] [--json]
+
+Options:
+  --strict       Exit with an error when warnings are present
+  --json         Print machine-readable findings
+  --cwd <dir>     Project directory
+  --config <file> Config file path
+`);
+}
+
+export function printServeHelp() {
+  console.log(`jsondb serve
+
+Usage:
+  jsondb serve [--host <host>] [--port <port>]
+
+Options:
+  --host <host>  Host to bind, defaulting to configured server.host
+  --port <port>  Port to bind, defaulting to configured server.port
+  --cwd <dir>     Project directory
+  --config <file> Config file path
+`);
+}
+
+export function printGenerateHelp(usage) {
+  console.log(`jsondb generate
+
+Usage:
+  ${usage}
+
+Options:
+  --cwd <dir>     Project directory
+  --config <file> Config file path
+`);
+}
